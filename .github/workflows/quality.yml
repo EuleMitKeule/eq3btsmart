@@ -184,6 +184,10 @@ jobs:
         run: |
           poetry run pytest --cov=eq3btsmart --cov-report=xml --cov-report=term tests
 
+      - name: fix code coverage paths
+        run: |
+          sed -i 's/\/home\/runner\/work\/eq3btsmart\/eq3btsmart\//\/github\/workspace\//g' coverage.xml
+
       - name: Run SonarCloud analysis
         uses: sonarsource/sonarcloud-github-action@master
         env:
