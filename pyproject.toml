@@ -1,0 +1,52 @@
+[tool.poetry]
+name = "eq3btsmart"
+version = "0.0.1"
+description = ""
+authors = ["Lennard Beers"]
+readme = "README.md"
+repository = "https://github.com/eulemitkeule/eq3btsmart"
+packages = [
+    { include = "eq3btsmart" }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+bleak = "^0.21.1"
+construct = "^2.10.68"
+construct-typing = "^0.6.2"
+pytest-asyncio = "^0.23.3"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.1.13"
+mypy = "^1.8.0"
+pre-commit = "^3.6.0"
+homeassistant-stubs = "^2023.1.1"
+voluptuous-stubs = "^0.1.1"
+
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.4.4"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.12.0"
+pytest-freezer = "^0.4.8"
+freezegun = "^1.4.0"
+
+
+[tool.poetry.group.integration.dependencies]
+bleak-esphome = "^0.4.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+unfixable = ["F401"]
+
+[tool.mypy]
+check_untyped_defs = true
+explicit_package_bases = true
+
+[tool.pytest]
+testpaths = [
+    "tests",
+]

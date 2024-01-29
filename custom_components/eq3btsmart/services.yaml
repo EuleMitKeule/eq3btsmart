@@ -1,0 +1,129 @@
+set_away_until:
+  name: Set Away until
+  target:
+    device:
+      integration: eq3btsmart
+      model: CC-RT-BLE-EQ
+  fields:
+    away_until:
+      name: Away until
+      required: true
+      selector:
+        datetime:
+    temperature:
+      name: "Target temperature while away"
+      required: true
+      example: 12
+      default: 12
+      selector:
+        number:
+          min: 4.5
+          max: 30
+          step: 0.5
+          unit_of_measurement: °C
+
+set_schedule:
+  name: Set EQ3 Schedule
+  target:
+    device:
+      integration: eq3btsmart
+      model: CC-RT-BLE-EQ
+  fields:
+    days:
+      name: Days to set
+      required: true
+      selector:
+        select:
+          mode: list
+          multiple: true
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
+    target_temp_0:
+      name: "Starting Temperature"
+      required: true
+      example: 17
+      default: 17
+      selector: &temp_selector
+        number:
+          min: 5
+          max: 29.5
+          step: 0.5
+          unit_of_measurement: °C
+    next_change_at_0:
+      name: Until
+      required: false
+      example: "06:00:00"
+      default: "06:00:00"
+      selector: &time_selector
+        time:
+
+    target_temp_1:
+      name: "Then change to"
+      required: false
+      example: 21
+      default: 21
+      selector: *temp_selector
+    next_change_at_1:
+      name: Until
+      example: "09:00:00"
+      default: "09:00:00"
+      selector: *time_selector
+
+    target_temp_2:
+      name: "Then change to"
+      example: 17
+      default: 17
+      selector: *temp_selector
+    next_change_at_2:
+      name: Until
+      example: "17:00:00"
+      default: "17:00:00"
+      selector: *time_selector
+
+    target_temp_3:
+      name: "Then change to"
+      example: 21
+      default: 21
+      selector: *temp_selector
+    next_change_at_3:
+      name: Until
+      example: "23:00:00"
+      default: "23:00:00"
+      selector: *time_selector
+
+    target_temp_4:
+      name: "Then change to"
+      example: 17
+      default: 17
+      selector: *temp_selector
+    next_change_at_4:
+      name: Until
+      default: "23:00:00"
+      selector: *time_selector
+
+    target_temp_5:
+      name: "Then change to"
+      default: 17
+      selector: *temp_selector
+    next_change_at_5:
+      name: Until
+      default: "23:00:00"
+      selector: *time_selector
+
+    target_temp_6:
+      name: "Then change to"
+      default: 17
+      selector: *temp_selector
