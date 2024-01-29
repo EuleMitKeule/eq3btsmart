@@ -24,13 +24,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Load cached Poetry installation
         id: cached-poetry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.local
           key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -44,7 +44,7 @@ jobs:
 
       - name: Load cached Poetry venv
         id: cached-poetry-venv
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: .venv
           key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -64,18 +64,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Load cached Poetry installation
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.local
           key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
 
       - name: Load cached Poetry venv
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.venv
           key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -96,18 +96,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Load cached Poetry installation
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.local
           key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
 
       - name: Load cached Poetry venv
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.venv
           key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -128,18 +128,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Load cached Poetry installation
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.local
           key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
 
       - name: Load cached Poetry venv
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.venv
           key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -162,18 +162,18 @@ jobs:
           fetch-depth: 0
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Load cached Poetry installation
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.local
           key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
 
       - name: Load cached Poetry venv
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.venv
           key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
