@@ -4,7 +4,6 @@ Support for eq3 Bluetooth Smart thermostats.
 All temperatures in Celsius.
 
 To get the current state, update() has to be called for powersaving reasons.
-Schedule needs to be requested with query_schedule() before accessing for similar reasons.
 """
 
 import asyncio
@@ -84,11 +83,11 @@ class Thermostat:
         self._device = ble_device
         self._conn: BleakClient = BleakClient(
             ble_device,
+            disconnected_callback=lambda client: self._on_connection_changed(False),
             timeout=REQUEST_TIMEOUT,
         )
         self._lock = asyncio.Lock()
         self._monitor = ConnectionMonitor(self._conn)
-        self._monitor.register_connection_changed_callback(self._on_connection_changed)
 
     @property
     def is_connected(self) -> bool:
