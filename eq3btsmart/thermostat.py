@@ -90,6 +90,24 @@ class Thermostat:
         self._lock = asyncio.Lock()
         self._monitor = ConnectionMonitor(self._conn)
 
+    @property
+    def is_connected(self) -> bool:
+        """Return true if connected to the thermostat."""
+
+        return self._conn.is_connected
+
+    @property
+    def is_monitoring(self) -> bool:
+        """Return true if monitoring the connection."""
+
+        return self._monitor._run
+
+    @property
+    def is_busy(self) -> bool:
+        """Return true if the thermostat is busy."""
+
+        return self._lock.locked()
+
     def register_connection_callback(self, on_connect: Callable) -> None:
         """Register a callback function that will be called when a connection is established."""
 
