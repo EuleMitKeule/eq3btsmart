@@ -84,11 +84,11 @@ class Thermostat:
         self._device = ble_device
         self._conn: BleakClient = BleakClient(
             ble_device,
-            disconnected_callback=lambda client: self.on_connection(),
             timeout=REQUEST_TIMEOUT,
         )
         self._lock = asyncio.Lock()
         self._monitor = ConnectionMonitor(self._conn)
+        self._monitor.register_connection_changed_callback(self._on_connection_changed)
 
     @property
     def is_connected(self) -> bool:
@@ -123,8 +123,6 @@ class Thermostat:
 
         await self._conn.connect()
         await self._conn.start_notify(NOTIFY_CHARACTERISTIC_UUID, self.on_notification)
-
-        self.on_connection()
 
         loop = asyncio.get_running_loop()
         loop.create_task(self._monitor.run())
@@ -342,14 +340,14 @@ class Thermostat:
         async with self._lock:
             try:
                 await self._conn.write_gatt_char(WRITE_CHARACTERISTIC_UUID, data)
-            except BleakError as ex:
+            except (BleakError, TimeoutError) as ex:
                 raise Eq3Exception("Error during write") from ex
 
-            self.on_connection()
+    def _on_connection_changed(self, connected: bool) -> None:
+        """Handle connection changes."""
 
-    def on_connection(self) -> None:
         for callback in self._on_connection_callbacks:
-            callback()
+            callback(connected)
 
     def on_notification(self, handle: BleakGATTCharacteristic, data: bytes) -> None:
         """Handle Callback from a Bluetooth (GATT) request."""
