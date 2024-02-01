@@ -15,6 +15,7 @@ from typing import Callable
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
 from construct_typed import DataclassStruct
 
 from eq3btsmart.adapter.eq3_away_time import Eq3AwayTime
@@ -38,6 +39,7 @@ from eq3btsmart.const import (
     OperationMode,
     WeekDay,
 )
+from eq3btsmart.exceptions import Eq3Exception
 from eq3btsmart.models import DeviceData, Schedule, Status
 from eq3btsmart.structures import (
     AwaySetCommand,
@@ -155,7 +157,7 @@ class Thermostat:
         """Set the thermostats preset temperatures comfort (sun) and eco (moon)."""
 
         if self.status is None:
-            raise Exception("Status not set")
+            raise Eq3Exception("Status not set")
 
         if comfort_temperature is None and self.status.presets is not None:
             comfort_temperature = self.status.presets.comfort_temperature.value
@@ -164,7 +166,7 @@ class Thermostat:
             eco_temperature = self.status.presets.eco_temperature.value
 
         if comfort_temperature is None or eco_temperature is None:
-            raise Exception("Comfort or eco temperature not set")
+            raise Eq3Exception("Comfort or eco temperature not set")
 
         eq3_comfort_temperature = Eq3Temperature(comfort_temperature)
         eq3_eco_temperature = Eq3Temperature(eco_temperature)
@@ -190,7 +192,7 @@ class Thermostat:
         """Set new operation mode."""
 
         if self.status is None or self.status.target_temperature is None:
-            raise Exception("Status not set")
+            raise Eq3Exception("Status not set")
 
         command: ModeSetCommand
 
@@ -315,12 +317,15 @@ class Thermostat:
         """Write a EQ3 command to the thermostat."""
 
         if not self._conn.is_connected:
-            raise Exception("Not connected")
+            raise Eq3Exception("Not connected")
 
         data = command.to_bytes()
 
         async with self._lock:
-            await self._conn.write_gatt_char(WRITE_CHARACTERISTIC_UUID, data)
+            try:
+                await self._conn.write_gatt_char(WRITE_CHARACTERISTIC_UUID, data)
+            except BleakError as ex:
+                raise Eq3Exception("Error during write") from ex
 
             self.on_connection()
 

@@ -1,9 +1,4 @@
 """Exceptions for the eq3btsmart library."""
 
-
-class TemperatureException(Exception):
-    """Temperature out of range error."""
-
-
-class BackendException(Exception):
-    """Exception to wrap backend exceptions."""
+class Eq3Exception(Exception):
+    """Base exception for the eq3btsmart library."""

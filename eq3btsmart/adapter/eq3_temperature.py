@@ -3,7 +3,6 @@ from eq3btsmart.const import (
     EQ3BT_OFF_TEMP,
     EQ3BT_ON_TEMP,
 )
-from eq3btsmart.exceptions import TemperatureException
 
 
 class Eq3Temperature(BaseAdapter[float, int]):
@@ -12,7 +11,7 @@ class Eq3Temperature(BaseAdapter[float, int]):
     @classmethod
     def _encode(cls, value: float) -> int:
         if value < EQ3BT_OFF_TEMP or value > EQ3BT_ON_TEMP:
-            raise TemperatureException(
+            raise ValueError(
                 f"Temperature {value} out of range [{EQ3BT_OFF_TEMP}, {EQ3BT_ON_TEMP}]"
             )
 

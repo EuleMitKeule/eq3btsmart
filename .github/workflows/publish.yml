@@ -58,8 +58,6 @@ jobs:
   package:
     needs: version
     runs-on: ubuntu-latest
-    environment:
-      url: https://pypi.org/project/eq3btsmart/
     permissions:
       id-token: write
     steps:
