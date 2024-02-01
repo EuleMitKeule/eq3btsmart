@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, time, timedelta
 
 import pytest
@@ -66,9 +67,9 @@ async def test_connection_callback(mock_thermostat: Thermostat):
 
     called: bool = False
 
-    def on_connection():
+    def on_connection(is_connected: bool):
         nonlocal called
-        called = True
+        called = is_connected
 
     mock_thermostat.register_connection_callback(on_connection)
 

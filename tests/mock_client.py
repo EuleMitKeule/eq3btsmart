@@ -80,6 +80,9 @@ class MockClient:
     def is_connected(self):
         return self._is_connected
 
+    def set_disconnected_callback(self, callback: Callable):
+        self._disconnected_callback = callback
+
     async def connect(self, **kwargs):
         if self._fail_on_connect:
             raise BleakError()

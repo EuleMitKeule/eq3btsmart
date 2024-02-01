@@ -124,6 +124,8 @@ class Thermostat:
         await self._conn.connect()
         await self._conn.start_notify(NOTIFY_CHARACTERISTIC_UUID, self.on_notification)
 
+        self._on_connection_changed(True)
+
         loop = asyncio.get_running_loop()
         loop.create_task(self._monitor.run())
 
