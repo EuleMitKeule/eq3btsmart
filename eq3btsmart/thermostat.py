@@ -233,6 +233,12 @@ class Thermostat:
                     mode=OperationMode.MANUAL | off_temperature.encode()
                 )
             case OperationMode.ON:
+                if self.status is not None and self.status.is_away:
+                    await self.async_set_away(False)
+
+                if self.status is not None and self.status.is_boost:
+                    await self.async_set_boost(False)
+
                 on_temperature = Eq3Temperature(EQ3BT_ON_TEMP)
                 command = ModeSetCommand(
                     mode=OperationMode.MANUAL | on_temperature.encode()
@@ -289,6 +295,12 @@ class Thermostat:
                 command = ComfortSetCommand()
             case Eq3Preset.ECO:
                 command = EcoSetCommand()
+
+        if self.status is not None and self.status.is_away:
+            await self.async_set_away(False)
+
+        if self.status is not None and self.status.is_boost:
+            await self.async_set_boost(False)
 
         await self._async_write_command(command)
 

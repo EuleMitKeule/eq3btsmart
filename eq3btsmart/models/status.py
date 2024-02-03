@@ -32,6 +32,10 @@ class Status(BaseModel[StatusStruct]):
 
         return self._operation_mode
 
+    @property
+    def valve_temperature(self) -> float:
+        return (1 - self.valve / 100) * 2 + self.target_temperature.value - 2
+
     @classmethod
     def from_struct(cls, struct: StatusStruct) -> Self:
         return cls(
