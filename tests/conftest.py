@@ -5,7 +5,6 @@ from typing import Generator
 import pytest
 from bleak.backends.device import BLEDevice
 
-from eq3btsmart.const import Adapter
 from eq3btsmart.thermostat import Thermostat
 from eq3btsmart.thermostat_config import ThermostatConfig
 from tests.mock_client import MockClient
@@ -52,8 +51,6 @@ def mock_thermostat(
         ThermostatConfig(
             mac_address=mock_device.address,
             name="",
-            adapter=Adapter.LOCAL,
-            stay_connected=True,
         ),
         mock_device,
     )

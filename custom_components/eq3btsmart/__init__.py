@@ -78,8 +78,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     thermostat_config = ThermostatConfig(
         mac_address=mac_address,
         name=name,
-        adapter=adapter,
-        stay_connected=stay_connected,
     )
 
     try:

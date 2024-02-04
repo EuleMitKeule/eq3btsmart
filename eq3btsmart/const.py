@@ -86,11 +86,6 @@ class StatusFlags(FlagsEnumBase):
     LOW_BATTERY = 0x80
 
 
-class Adapter(str, Enum):
-    AUTO = "AUTO"
-    LOCAL = "LOCAL"
-
-
 class Eq3Preset(Enum):
     """Preset modes."""
 
