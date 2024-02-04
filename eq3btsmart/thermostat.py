@@ -274,6 +274,9 @@ class Thermostat:
     async def async_set_temperature(self, temperature: float) -> None:
         """Set new target temperature."""
 
+        temperature = round(temperature * 2) / 2
+        temperature = max(min(temperature, EQ3BT_MAX_TEMP), EQ3BT_MIN_TEMP)
+
         if temperature == EQ3BT_OFF_TEMP:
             return await self.async_set_mode(OperationMode.OFF)
 
