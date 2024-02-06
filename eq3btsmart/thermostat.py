@@ -104,10 +104,22 @@ class Thermostat:
 
         self._on_connection_callbacks.append(on_connect)
 
+    def unregister_connection_callback(self, on_connect: Callable) -> None:
+        """Unregister a callback function that will be called when a connection is established."""
+
+        if on_connect in self._on_connection_callbacks:
+            self._on_connection_callbacks.remove(on_connect)
+
     def register_update_callback(self, on_update: Callable) -> None:
         """Register a callback function that will be called when an update is received."""
 
         self._on_update_callbacks.append(on_update)
+
+    def unregister_update_callback(self, on_update: Callable) -> None:
+        """Unregister a callback function that will be called when an update is received."""
+
+        if on_update in self._on_update_callbacks:
+            self._on_update_callbacks.remove(on_update)
 
     async def async_connect(self) -> None:
         """Connect to the thermostat."""
