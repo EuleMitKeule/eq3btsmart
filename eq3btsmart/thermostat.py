@@ -22,7 +22,6 @@ from eq3btsmart.adapter.eq3_duration import Eq3Duration
 from eq3btsmart.adapter.eq3_temperature import Eq3Temperature
 from eq3btsmart.adapter.eq3_temperature_offset import Eq3TemperatureOffset
 from eq3btsmart.adapter.eq3_time import Eq3Time
-from eq3btsmart.connection_monitor import ConnectionMonitor
 from eq3btsmart.const import (
     DEFAULT_AWAY_HOURS,
     DEFAULT_AWAY_TEMP,
@@ -87,19 +86,12 @@ class Thermostat:
             timeout=REQUEST_TIMEOUT,
         )
         self._lock = asyncio.Lock()
-        self._monitor = ConnectionMonitor(self._conn)
 
     @property
     def is_connected(self) -> bool:
         """Return true if connected to the thermostat."""
 
         return self._conn.is_connected
-
-    @property
-    def is_monitoring(self) -> bool:
-        """Return true if monitoring the connection."""
-
-        return self._monitor._run
 
     @property
     def is_busy(self) -> bool:
@@ -120,19 +112,23 @@ class Thermostat:
     async def async_connect(self) -> None:
         """Connect to the thermostat."""
 
-        await self._conn.connect()
-        await self._conn.start_notify(NOTIFY_CHARACTERISTIC_UUID, self.on_notification)
+        try:
+            await self._conn.connect()
+            await self._conn.start_notify(
+                NOTIFY_CHARACTERISTIC_UUID, self.on_notification
+            )
+        except (BleakError, TimeoutError) as ex:
+            raise Eq3Exception("Could not connect to the device") from ex
 
         self._on_connection_changed(True)
-
-        loop = asyncio.get_running_loop()
-        loop.create_task(self._monitor.run())
 
     async def async_disconnect(self) -> None:
         """Shutdown the connection to the thermostat."""
 
-        await self._monitor.stop()
-        await self._conn.disconnect()
+        try:
+            await self._conn.disconnect()
+        except (BleakError, TimeoutError) as ex:
+            raise Eq3Exception("Could not disconnect from the device") from ex
 
     async def async_get_id(self) -> None:
         """Query device identification information, e.g. the serial number."""
