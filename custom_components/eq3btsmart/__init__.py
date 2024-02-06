@@ -77,7 +77,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     thermostat_config = ThermostatConfig(
         mac_address=mac_address,
-        name=name,
     )
 
     try:
