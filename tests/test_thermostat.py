@@ -83,23 +83,35 @@ async def test_connection_callback(mock_thermostat: Thermostat):
 async def test_get_id(mock_thermostat: Thermostat):
     await mock_thermostat.async_connect()
 
-    assert mock_thermostat.device_data is None
+    initial_device_data = mock_thermostat.device_data
+
+    from tests.mock_client import mock_id
+
+    mock_id.version = 100
 
     await mock_thermostat.async_get_id()
 
     assert mock_thermostat.device_data is not None
     assert isinstance(mock_thermostat.device_data.device_serial, Eq3Serial)
+    assert mock_thermostat.device_data.device_serial == mock_id.serial
+    assert initial_device_data != mock_thermostat.device_data
 
 
 @pytest.mark.asyncio
 async def test_get_status(mock_thermostat: Thermostat):
     await mock_thermostat.async_connect()
 
-    assert mock_thermostat.status is None
+    initial_status = mock_thermostat.status
+
+    from tests.mock_client import mock_status
+
+    mock_status.valve = 0x0F
 
     await mock_thermostat.async_get_status()
 
     assert mock_thermostat.status is not None
+    assert mock_thermostat.status.valve == 0x0F
+    assert initial_status != mock_thermostat.status
 
 
 @pytest.mark.asyncio
@@ -174,6 +186,8 @@ async def test_configure_presets(mock_thermostat: Thermostat):
 @pytest.mark.asyncio
 async def test_configure_presets_without_status(mock_thermostat: Thermostat):
     await mock_thermostat.async_connect()
+
+    mock_thermostat.status = None
 
     with pytest.raises(Exception):
         await mock_thermostat.async_configure_presets(
@@ -314,6 +328,8 @@ async def test_set_mode(mock_thermostat: Thermostat):
 @pytest.mark.asyncio
 async def test_set_mode_without_status(mock_thermostat: Thermostat):
     await mock_thermostat.async_connect()
+
+    mock_thermostat.status = None
 
     with pytest.raises(Exception):
         await mock_thermostat.async_set_mode(OperationMode.AUTO)
