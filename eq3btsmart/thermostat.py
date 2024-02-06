@@ -117,6 +117,8 @@ class Thermostat:
             await self._conn.start_notify(
                 NOTIFY_CHARACTERISTIC_UUID, self.on_notification
             )
+            await self.async_get_id()
+            await self.async_get_status()
         except (BleakError, TimeoutError) as ex:
             raise Eq3Exception("Could not connect to the device") from ex
 
