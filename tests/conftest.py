@@ -50,7 +50,6 @@ def mock_thermostat(
     thermostat = Thermostat(
         ThermostatConfig(
             mac_address=mock_device.address,
-            name="",
         ),
         mock_device,
     )
