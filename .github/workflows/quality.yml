@@ -86,7 +86,7 @@ jobs:
 
       - name: Run ruff
         run: |
-          poetry run ruff eq3btsmart custom_components/eq3btsmart
+          poetry run ruff eq3btsmart
 
   mypy:
     needs: cache
@@ -118,7 +118,7 @@ jobs:
 
       - name: Run mypy
         run: |
-          poetry run mypy eq3btsmart custom_components/eq3btsmart
+          poetry run mypy eq3btsmart
 
   tests:
     needs: cache
