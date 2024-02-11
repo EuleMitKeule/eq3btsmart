@@ -1,5 +1,3 @@
-![My Home Assistant](https://img.shields.io/badge/Home%20Assistant-%2341BDF5.svg?style=flat&logo=home-assistant&label=My)
-
 ![PyPI - Version](https://img.shields.io/pypi/v/eq3btsmart?logo=python&logoColor=green&color=blue)
 ![GitHub License](https://img.shields.io/github/license/eulemitkeule/eq3btsmart)
 ![GitHub Sponsors](https://img.shields.io/github/sponsors/eulemitkeule?logo=GitHub-Sponsors)
