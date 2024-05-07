@@ -11,7 +11,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
-bleak = "^0.21.1"
+bleak = ">=0.21.0"
 construct = "^2.10.68"
 construct-typing = "^0.6.2"
 pytest-asyncio = "^0.23.3"
