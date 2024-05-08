@@ -8,6 +8,8 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 
 The MIT License (MIT)
 
+Based on work by:
+
 Copyright (c) 2016 Markus Peter
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
