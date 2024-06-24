@@ -8,6 +8,9 @@ repository = "https://github.com/eulemitkeule/eq3btsmart"
 packages = [
     { include = "eq3btsmart" }
 ]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
