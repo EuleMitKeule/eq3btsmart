@@ -13,7 +13,7 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.13"
+python = ">=3.12,<3.14"
 bleak = ">=0.21.0"
 construct = ">=2.10.68"
 construct-typing = ">=0.6.2"
@@ -22,7 +22,7 @@ construct-typing = ">=0.6.2"
 ruff = "^0.1.13"
 mypy = "^1.8.0"
 pre-commit = "^3.6.0"
-homeassistant-stubs = "^2023.1.1"
+homeassistant-stubs = "^2024.10.3"
 voluptuous-stubs = "^0.1.1"
 
 [tool.poetry.group.test.dependencies]
@@ -34,7 +34,7 @@ freezegun = "^1.4.0"
 pytest-asyncio = "^0.23.3"
 
 [tool.poetry.group.integration.dependencies]
-bleak-esphome = "^0.4.1"
+bleak-esphome = "^1.1.0"
 
 [build-system]
 requires = ["poetry-core"]
