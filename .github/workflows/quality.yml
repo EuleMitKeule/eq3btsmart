@@ -19,6 +19,11 @@ env:
 jobs:
   cache:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,14 +31,14 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v4
         with:
           path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Install Poetry
         if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -47,7 +52,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Install dependencies
         if: steps.cached-poetry-venv.outputs.cache-hit != 'true'
@@ -59,6 +64,11 @@ jobs:
   ruff:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,19 +76,19 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         uses: actions/cache@v4
         with:
           path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Load cached Poetry venv
         uses: actions/cache@v4
         with:
           path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Install package
         run: |
@@ -91,6 +101,11 @@ jobs:
   mypy:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -98,19 +113,19 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         uses: actions/cache@v4
         with:
           path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Load cached Poetry venv
         uses: actions/cache@v4
         with:
           path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Install package
         run: |
@@ -141,13 +156,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Load cached Poetry venv
         uses: actions/cache@v4
         with:
           path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Install package
         run: |
@@ -160,6 +175,11 @@ jobs:
   sonar:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -169,19 +189,19 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         uses: actions/cache@v4
         with:
           path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Load cached Poetry venv
         uses: actions/cache@v4
         with:
           path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
 
       - name: Install package
         run: |
@@ -207,4 +227,4 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=eq3btsmart
             -Dsonar.tests=tests
-            -Dsonar.python.version=3.11
+            -Dsonar.python.version=${{ matrix.python-version }}
