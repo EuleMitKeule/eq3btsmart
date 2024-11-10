@@ -1,7 +1,4 @@
 {
-    "files.associations": {
-        "*.yaml": "home-assistant"
-    },
     "editor.codeActionsOnSave": {
         "source.fixAll": "explicit",
         "source.organizeImports": "explicit"

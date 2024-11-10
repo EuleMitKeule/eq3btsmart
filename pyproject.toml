@@ -6,7 +6,8 @@ authors = ["Lennard Beers"]
 readme = "README.md"
 repository = "https://github.com/eulemitkeule/eq3btsmart"
 packages = [
-    { include = "eq3btsmart" }
+    { include = "eq3btsmart" },
+    { include = "eq3btsmart/py.typed" },
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
