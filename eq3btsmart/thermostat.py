@@ -175,24 +175,32 @@ class Thermostat:
             )
         )
 
+    async def async_configure_window_open_temperature(self, temperature: float) -> None:
+        """Configures the window open temperature."""
+
+        if self.status is None or self.status.presets is None:
+            return
+
+        await self.async_configure_window_open(
+            temperature, self.status.presets.window_open_time.value
+        )
+
+    async def async_configure_window_open_duration(self, duration: timedelta) -> None:
+        """Configures the window open duration."""
+
+        if self.status is None or self.status.presets is None:
+            return
+
+        await self.async_configure_window_open(
+            self.status.presets.window_open_temperature.value, duration
+        )
+
     async def async_configure_presets(
         self,
-        comfort_temperature: float | None = None,
-        eco_temperature: float | None = None,
+        comfort_temperature: float,
+        eco_temperature: float,
     ) -> None:
         """Set the thermostats preset temperatures comfort (sun) and eco (moon)."""
-
-        if self.status is None:
-            raise Eq3Exception("Status not set")
-
-        if comfort_temperature is None and self.status.presets is not None:
-            comfort_temperature = self.status.presets.comfort_temperature.value
-
-        if eco_temperature is None and self.status.presets is not None:
-            eco_temperature = self.status.presets.eco_temperature.value
-
-        if comfort_temperature is None or eco_temperature is None:
-            raise Eq3Exception("Comfort or eco temperature not set")
 
         eq3_comfort_temperature = Eq3Temperature(comfort_temperature)
         eq3_eco_temperature = Eq3Temperature(eco_temperature)
@@ -204,17 +212,27 @@ class Thermostat:
             )
         )
 
-    async def async_configure_eco_temperature(self, eco_temperature: float) -> None:
-        """Sets the thermostat's eco temperature."""
-
-        await self.async_configure_presets(eco_temperature=eco_temperature)
-
     async def async_configure_comfort_temperature(
         self, comfort_temperature: float
     ) -> None:
         """Sets the thermostat's comfort temperature."""
 
-        await self.async_configure_presets(comfort_temperature=comfort_temperature)
+        if self.status is not None and self.status.presets is None:
+            return
+
+        await self.async_configure_presets(
+            comfort_temperature, self.status.presets.eco_temperature
+        )
+
+    async def async_configure_eco_temperature(self, eco_temperature: float) -> None:
+        """Sets the thermostat's eco temperature."""
+
+        if self.status is not None and self.status.presets is None:
+            return
+
+        await self.async_configure_presets(
+            self.status.presets.comfort_temperature, eco_temperature
+        )
 
     async def async_configure_temperature_offset(
         self, temperature_offset: float

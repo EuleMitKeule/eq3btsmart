@@ -15,7 +15,6 @@ from eq3btsmart.const import (
     OperationMode,
     WeekDay,
 )
-from eq3btsmart.models.presets import Presets
 from eq3btsmart.models.schedule import Schedule
 from eq3btsmart.models.schedule_day import ScheduleDay
 from eq3btsmart.models.schedule_hour import ScheduleHour
@@ -184,84 +183,25 @@ async def test_configure_presets(mock_thermostat: Thermostat):
 
 
 @pytest.mark.asyncio
-async def test_configure_presets_without_status(mock_thermostat: Thermostat):
+async def test_configure_comfort_without_status(mock_thermostat: Thermostat):
     await mock_thermostat.async_connect()
 
     mock_thermostat.status = None
 
     with pytest.raises(Exception):
-        await mock_thermostat.async_configure_presets(
+        await mock_thermostat.async_configure_comfort_temperature(
             26.5,
-            16,
         )
 
 
 @pytest.mark.asyncio
-async def test_configure_presets_comfort(mock_thermostat: Thermostat):
+async def test_configure_eco_without_status(mock_thermostat: Thermostat):
     await mock_thermostat.async_connect()
 
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.MANUAL,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=Presets(
-            comfort_temperature=Eq3Temperature(21.0),
-            eco_temperature=Eq3Temperature(17.0),
-            window_open_temperature=Eq3Temperature(12.0),
-            window_open_time=Eq3Duration(timedelta(minutes=5)),
-            offset_temperature=Eq3TemperatureOffset(0.0),
-        ),
-    )
+    mock_thermostat.status = None
 
-    await mock_thermostat.async_configure_presets(
-        comfort_temperature=26.5,
-    )
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.presets is not None
-    assert mock_thermostat.status.presets.comfort_temperature == Eq3Temperature(26.5)
-    assert mock_thermostat.status.presets.eco_temperature == Eq3Temperature(17.0)
-
-
-@pytest.mark.asyncio
-async def test_configure_presets_eco(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.MANUAL,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=Presets(
-            comfort_temperature=Eq3Temperature(21.0),
-            eco_temperature=Eq3Temperature(17.0),
-            window_open_temperature=Eq3Temperature(12.0),
-            window_open_time=Eq3Duration(timedelta(minutes=5)),
-            offset_temperature=Eq3TemperatureOffset(0.0),
-        ),
-    )
-
-    await mock_thermostat.async_configure_presets(
-        eco_temperature=11.5,
-    )
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.presets is not None
-    assert mock_thermostat.status.presets.comfort_temperature == Eq3Temperature(21.0)
-    assert mock_thermostat.status.presets.eco_temperature == Eq3Temperature(11.5)
+    with pytest.raises(Exception):
+        await mock_thermostat.async_configure_eco_temperature(16)
 
 
 @pytest.mark.asyncio
