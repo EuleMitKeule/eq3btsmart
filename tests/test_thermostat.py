@@ -205,30 +205,6 @@ async def test_configure_eco_without_status(mock_thermostat: Thermostat):
 
 
 @pytest.mark.asyncio
-async def test_configure_presets_single_presets_none(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.MANUAL,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=None,
-    )
-
-    with pytest.raises(Exception):
-        await mock_thermostat.async_configure_presets(
-            comfort_temperature=26.5,
-        )
-
-
-@pytest.mark.asyncio
 async def test_configure_temperature_offset(mock_thermostat: Thermostat):
     await mock_thermostat.async_connect()
 

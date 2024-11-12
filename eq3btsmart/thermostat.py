@@ -216,21 +216,21 @@ class Thermostat:
     ) -> None:
         """Sets the thermostat's comfort temperature."""
 
-        if self.status is not None and self.status.presets is None:
-            return
+        if self.status is None or self.status.presets is None:
+            raise Eq3Exception("Status not set")
 
         await self.async_configure_presets(
-            comfort_temperature, self.status.presets.eco_temperature
+            comfort_temperature, self.status.presets.eco_temperature.value
         )
 
     async def async_configure_eco_temperature(self, eco_temperature: float) -> None:
         """Sets the thermostat's eco temperature."""
 
-        if self.status is not None and self.status.presets is None:
-            return
+        if self.status is None or self.status.presets is None:
+            raise Eq3Exception("Status not set")
 
         await self.async_configure_presets(
-            self.status.presets.comfort_temperature, eco_temperature
+            self.status.presets.comfort_temperature.value, eco_temperature
         )
 
     async def async_configure_temperature_offset(
