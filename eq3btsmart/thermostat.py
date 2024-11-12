@@ -184,11 +184,17 @@ class Thermostat:
             temperature, self.status.presets.window_open_time.value
         )
 
-    async def async_configure_window_open_duration(self, duration: timedelta) -> None:
+    async def async_configure_window_open_duration(
+        self,
+        duration: timedelta | float,
+    ) -> None:
         """Configures the window open duration."""
 
         if self.status is None or self.status.presets is None:
             return
+
+        if isinstance(duration, float):
+            duration = timedelta(minutes=duration)
 
         await self.async_configure_window_open(
             self.status.presets.window_open_temperature.value, duration
@@ -251,10 +257,10 @@ class Thermostat:
         if self.status is not None and self.status.is_away:
             await self.async_set_temperature(temperature)
 
-    async def async_configure_away_hours(self, hours: int) -> None:
+    async def async_configure_away_hours(self, hours: int | float) -> None:
         """Sets the thermostat's away hours."""
 
-        self.thermostat_config.away_hours = hours
+        self.thermostat_config.away_hours = round(hours)
 
         if self.status is not None and self.status.is_away:
             await self.async_set_away(True)
