@@ -23,7 +23,6 @@ from eq3btsmart.adapter.eq3_temperature import Eq3Temperature
 from eq3btsmart.adapter.eq3_temperature_offset import Eq3TemperatureOffset
 from eq3btsmart.adapter.eq3_time import Eq3Time
 from eq3btsmart.const import (
-    DEFAULT_AWAY_HOURS,
     EQ3BT_MAX_TEMP,
     EQ3BT_MIN_TEMP,
     EQ3BT_OFF_TEMP,
@@ -252,6 +251,14 @@ class Thermostat:
         if self.status is not None and self.status.is_away:
             await self.async_set_temperature(temperature)
 
+    async def async_configure_away_hours(self, hours: int) -> None:
+        """Sets the thermostat's away hours."""
+
+        self.thermostat_config.away_hours = hours
+
+        if self.status is not None and self.status.is_away:
+            await self.async_set_away(True)
+
     async def async_set_mode(self, operation_mode: OperationMode) -> None:
         """Set new operation mode."""
 
@@ -303,7 +310,9 @@ class Thermostat:
             return await self.async_set_mode(OperationMode.AUTO)
 
         if away_until is None:
-            away_until = datetime.now() + timedelta(hours=DEFAULT_AWAY_HOURS)
+            away_until = datetime.now() + timedelta(
+                hours=self.thermostat_config.away_hours
+            )
 
         if temperature is None:
             temperature = self.thermostat_config.away_temperature
