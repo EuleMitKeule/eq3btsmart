@@ -8,3 +8,4 @@ class ThermostatConfig:
     mac_address: str
     away_hours: int = DEFAULT_AWAY_HOURS
     away_temperature: float = DEFAULT_AWAY_TEMP
+    stay_connected: bool = False

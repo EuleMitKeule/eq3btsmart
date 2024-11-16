@@ -410,8 +410,10 @@ class Thermostat:
     async def _async_write_command(self, command: Eq3Struct) -> None:
         """Write a EQ3 command to the thermostat."""
 
-        if not self._conn.is_connected:
-            raise Eq3Exception("Not connected")
+        was_connected: bool = self._conn.is_connected
+
+        if not was_connected:
+            await self.async_connect()
 
         data = command.to_bytes()
 
@@ -420,6 +422,9 @@ class Thermostat:
                 await self._conn.write_gatt_char(WRITE_CHARACTERISTIC_UUID, data)
             except (BleakError, TimeoutError) as ex:
                 raise Eq3Exception("Error during write") from ex
+
+        if not was_connected and not self.thermostat_config.stay_connected:
+            await self.async_disconnect()
 
     def _on_connection_changed(self, connected: bool) -> None:
         """Handle connection changes."""

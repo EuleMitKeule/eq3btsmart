@@ -580,8 +580,22 @@ async def test_delete_schedule(mock_thermostat: Thermostat):
 
 @pytest.mark.asyncio
 async def test_write_not_connected(mock_thermostat: Thermostat):
-    with pytest.raises(Exception):
-        await mock_thermostat.async_set_boost(True)
+    assert not mock_thermostat._conn.is_connected
+
+    await mock_thermostat.async_set_boost(True)
+
+    assert not mock_thermostat._conn.is_connected
+
+
+@pytest.mark.asyncio
+async def test_write_not_connected_stay_connected(mock_thermostat: Thermostat):
+    mock_thermostat.thermostat_config.stay_connected = True
+
+    assert not mock_thermostat._conn.is_connected
+
+    await mock_thermostat.async_set_boost(True)
+
+    assert mock_thermostat._conn.is_connected
 
 
 @pytest.mark.asyncio
