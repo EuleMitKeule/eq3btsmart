@@ -1,13 +1,19 @@
-from eq3btsmart.adapter.base_adapter import BaseAdapter
+from construct_typed import Adapter, Context
 
 
-class Eq3Serial(BaseAdapter[str, bytes]):
+class Eq3Serial(Adapter[bytes, bytes, str, str]):
     """Adapter to encode and decode serial id."""
 
+    def _encode(self, obj: str, ctx: Context, path: str) -> bytes:
+        return self.encode(obj)
+
+    def _decode(self, obj: bytes, ctx: Context, path: str) -> str:
+        return self.decode(obj)
+
     @classmethod
-    def _encode(cls, value: str) -> bytes:
+    def encode(cls, value: str) -> bytes:
         return bytes(char + 0x30 for char in value.encode())
 
     @classmethod
-    def _decode(cls, value: bytes) -> str:
+    def decode(cls, value: bytes) -> str:
         return bytes(char - 0x30 for char in value).decode()

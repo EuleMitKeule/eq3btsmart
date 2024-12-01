@@ -1,21 +1,28 @@
 from datetime import timedelta
 
-from eq3btsmart.adapter.base_adapter import BaseAdapter
+from construct_typed import Adapter, Context
+
+from eq3btsmart.exceptions import Eq3InvalidDataException
 
 
-class Eq3Duration(BaseAdapter[timedelta, int]):
+class Eq3Duration(Adapter[int, int, timedelta, timedelta]):
     """Adapter to encode and decode duration data."""
 
+    def _encode(self, obj: timedelta, ctx: Context, path: str) -> int:
+        return self.encode(obj)
+
+    def _decode(self, obj: int, ctx: Context, path: str) -> timedelta:
+        return self.decode(obj)
+
     @classmethod
-    def _encode(cls, value: timedelta) -> int:
+    def encode(cls, value: timedelta) -> int:
         if value.seconds < 0 or value.seconds > 3600.0:
-            raise ValueError(
-                "Window open time must be between 0 and 60 minutes "
-                "in intervals of 5 minutes."
+            raise Eq3InvalidDataException(
+                "Window open time must be between 0 and 60 minutes in intervals of 5 minutes."
             )
 
         return int(value.seconds / 300.0)
 
     @classmethod
-    def _decode(cls, value: int) -> timedelta:
+    def decode(cls, value: int) -> timedelta:
         return timedelta(minutes=float(value * 5.0))

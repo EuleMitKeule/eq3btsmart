@@ -1,20 +1,18 @@
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Self
 
-from eq3btsmart.adapter.eq3_duration import Eq3Duration
-from eq3btsmart.adapter.eq3_temperature import Eq3Temperature
-from eq3btsmart.adapter.eq3_temperature_offset import Eq3TemperatureOffset
 from eq3btsmart.models.base_model import BaseModel
 from eq3btsmart.structures import PresetsStruct
 
 
 @dataclass
 class Presets(BaseModel[PresetsStruct]):
-    window_open_temperature: Eq3Temperature
-    window_open_time: Eq3Duration
-    comfort_temperature: Eq3Temperature
-    eco_temperature: Eq3Temperature
-    offset_temperature: Eq3TemperatureOffset
+    window_open_temperature: float
+    window_open_time: timedelta
+    comfort_temperature: float
+    eco_temperature: float
+    offset_temperature: float
 
     @classmethod
     def from_struct(cls, struct: PresetsStruct) -> Self:

@@ -1,5 +1,7 @@
 """Structures for the eQ-3 Bluetooth Smart Thermostat."""
+
 from dataclasses import dataclass
+from datetime import datetime, time, timedelta
 from typing import Self
 
 from construct import (
@@ -46,11 +48,11 @@ class Eq3Struct(DataclassMixin):
 class PresetsStruct(Eq3Struct):
     """Structure for presets data."""
 
-    window_open_temp: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
-    window_open_time: Eq3Duration = csfield(Eq3Duration.adapter()(Int8ub))
-    comfort_temp: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
-    eco_temp: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
-    offset: Eq3TemperatureOffset = csfield(Eq3TemperatureOffset.adapter()(Int8ub))
+    window_open_temp: float = csfield(Eq3Temperature(Int8ub))
+    window_open_time: timedelta = csfield(Eq3Duration(Int8ub))
+    comfort_temp: float = csfield(Eq3Temperature(Int8ub))
+    eco_temp: float = csfield(Eq3Temperature(Int8ub))
+    offset: float = csfield(Eq3TemperatureOffset(Int8ub))
 
 
 @dataclass
@@ -62,8 +64,8 @@ class StatusStruct(Eq3Struct):
     mode: StatusFlags = csfield(TFlagsEnum(Int8ub, StatusFlags))
     valve: int = csfield(Int8ub)
     const_2: int = csfield(Const(0x04, Int8ub))
-    target_temp: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
-    away: Eq3AwayTime | None = csfield(Optional(Eq3AwayTime.adapter()(Bytes(4))))
+    target_temp: float = csfield(Eq3Temperature(Int8ub))
+    away: datetime | None = csfield(Optional(Eq3AwayTime(Bytes(4))))
     presets: PresetsStruct | None = csfield(Optional(DataclassStruct(PresetsStruct)))
 
 
@@ -71,8 +73,8 @@ class StatusStruct(Eq3Struct):
 class ScheduleHourStruct(Eq3Struct):
     """Structure for schedule entry data."""
 
-    target_temp: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
-    next_change_at: Eq3ScheduleTime = csfield(Eq3ScheduleTime.adapter()(Int8ub))
+    target_temp: float = csfield(Eq3Temperature(Int8ub))
+    next_change_at: time = csfield(Eq3ScheduleTime(Int8ub))
 
 
 @dataclass
@@ -94,15 +96,16 @@ class DeviceDataStruct(Eq3Struct):
     version: int = csfield(Int8ub)
     unknown_1: int = csfield(Int8ub)
     unknown_2: int = csfield(Int8ub)
-    serial: Eq3Serial = csfield(Eq3Serial.adapter()(Bytes(10)))
+    serial: str = csfield(Eq3Serial(Bytes(10)))
     unknown_3: int = csfield(Int8ub)
 
 
 @dataclass
-class Eq3Command(Eq3Struct):
-    """Structure for eQ-3 command."""
+class Eq3Message(Eq3Struct):
+    """Structure for eQ-3 message."""
 
     cmd: int = csfield(Int8ub)
+    is_status_command: bool = csfield(Flag)
     data: bytes = csfield(GreedyBytes)
 
 
@@ -118,7 +121,7 @@ class InfoGetCommand(Eq3Struct):
     """Structure for info get command."""
 
     cmd: int = csfield(Const(Command.INFO_GET, Int8ub))
-    time: Eq3Time = csfield(Eq3Time.adapter()(Bytes(6)))
+    time: datetime = csfield(Eq3Time(Bytes(6)))
 
 
 @dataclass
@@ -126,8 +129,8 @@ class ComfortEcoConfigureCommand(Eq3Struct):
     """Structure for schedule get command."""
 
     cmd: int = csfield(Const(Command.COMFORT_ECO_CONFIGURE, Int8ub))
-    comfort_temperature: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
-    eco_temperature: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
+    comfort_temperature: float = csfield(Eq3Temperature(Int8ub))
+    eco_temperature: float = csfield(Eq3Temperature(Int8ub))
 
 
 @dataclass
@@ -135,7 +138,7 @@ class OffsetConfigureCommand(Eq3Struct):
     """Structure for offset configure command."""
 
     cmd: int = csfield(Const(Command.OFFSET_CONFIGURE, Int8ub))
-    offset: Eq3TemperatureOffset = csfield(Eq3TemperatureOffset.adapter()(Int8ub))
+    offset: float = csfield(Eq3TemperatureOffset(Int8ub))
 
 
 @dataclass
@@ -143,8 +146,8 @@ class WindowOpenConfigureCommand(Eq3Struct):
     """Structure for window open configure command."""
 
     cmd: int = csfield(Const(Command.WINDOW_OPEN_CONFIGURE, Int8ub))
-    window_open_temperature: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
-    window_open_time: Eq3Duration = csfield(Eq3Duration.adapter()(Int8ub))
+    window_open_temperature: float = csfield(Eq3Temperature(Int8ub))
+    window_open_time: timedelta = csfield(Eq3Duration(Int8ub))
 
 
 @dataclass
@@ -167,7 +170,7 @@ class ModeSetCommand(Eq3Struct):
 class AwaySetCommand(ModeSetCommand):
     """Structure for away set command."""
 
-    away_until: Eq3AwayTime = csfield(Eq3AwayTime.adapter()(Bytes(4)))
+    away_until: datetime = csfield(Eq3AwayTime(Bytes(4)))
 
 
 @dataclass
@@ -175,7 +178,7 @@ class TemperatureSetCommand(Eq3Struct):
     """Structure for temperature set command."""
 
     cmd: int = csfield(Const(Command.TEMPERATURE_SET, Int8ub))
-    temperature: Eq3Temperature = csfield(Eq3Temperature.adapter()(Int8ub))
+    temperature: float = csfield(Eq3Temperature(Int8ub))
 
 
 @dataclass

@@ -1,39 +1,4 @@
 {
-    "editor.codeActionsOnSave": {
-        "source.fixAll": "explicit",
-        "source.organizeImports": "explicit"
-    },
-    "editor.formatOnSave": true,
-    "ruff.codeAction.disableRuleComment": {
-        "enable": false
-    },
-    "[python]": {
-        "editor.defaultFormatter": "charliermarsh.ruff",
-    },
-    "python.analysis.autoImportCompletions": true,
-    "python.analysis.packageIndexDepths": [
-        {
-            "name": "",
-            "depth": 4,
-            "includeAllSymbols": true
-        }
-    ],
-    "mypy.extraArguments": [
-        "--exclude=.venv",
-        "--check-untyped-defs",
-    ],
-    "editor.indentSize": 4,
-    "files.exclude": {
-        "**/.git": true,
-        "**/.venv": true,
-        "**/__pycache__": true,
-        "**/.mypy_cache": true,
-        "**/.pytest_cache": true,
-        "**/.ruff_cache": true,
-        "**/dist": true,
-    },
-    "extensions.ignoreRecommendations": false,
-    "python.testing.pytestArgs": [
-        "tests",
-    ]
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }

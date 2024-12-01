@@ -1,8 +1,7 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Self
 
-from eq3btsmart.adapter.eq3_away_time import Eq3AwayTime
-from eq3btsmart.adapter.eq3_temperature import Eq3Temperature
 from eq3btsmart.const import EQ3BT_OFF_TEMP, EQ3BT_ON_TEMP, OperationMode
 from eq3btsmart.models import BaseModel, Presets
 from eq3btsmart.structures import StatusStruct
@@ -11,7 +10,7 @@ from eq3btsmart.structures import StatusStruct
 @dataclass
 class Status(BaseModel[StatusStruct]):
     valve: int
-    target_temperature: Eq3Temperature
+    target_temperature: float
     _operation_mode: OperationMode
     is_away: bool
     is_boost: bool
@@ -19,22 +18,22 @@ class Status(BaseModel[StatusStruct]):
     is_window_open: bool
     is_locked: bool
     is_low_battery: bool
-    away_until: Eq3AwayTime | None = None
+    away_until: datetime | None = None
     presets: Presets | None = None
 
     @property
     def operation_mode(self) -> OperationMode:
-        if self.target_temperature.value == EQ3BT_OFF_TEMP:
+        if self.target_temperature == EQ3BT_OFF_TEMP:
             return OperationMode.OFF
 
-        if self.target_temperature.value == EQ3BT_ON_TEMP:
+        if self.target_temperature == EQ3BT_ON_TEMP:
             return OperationMode.ON
 
         return self._operation_mode
 
     @property
     def valve_temperature(self) -> float:
-        return (1 - self.valve / 100) * 2 + self.target_temperature.value - 2
+        return (1 - self.valve / 100) * 2 + self.target_temperature - 2
 
     @classmethod
     def from_struct(cls, struct: StatusStruct) -> Self:

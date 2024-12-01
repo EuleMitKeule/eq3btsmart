@@ -69,41 +69,23 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-3.13
+          python-version: "3.13"
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-3.13
 
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-        with:
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached Poetry venv
-        id: cached-poetry-venv
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-3.13
-
-      - name: Install dependencies
-        if: steps.cached-poetry-venv.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
-
-      - name: Install package
-        run: poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync
 
       - name: Set package version
         run: |
-          poetry version ${{ needs.version.outputs.version }}
+          uvx --from=toml-cli toml set --toml-path=pyproject.toml project.version ${{ needs.version.outputs.version }}
 
       - name: Build package
         run: |
-          poetry build
+          uv build
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

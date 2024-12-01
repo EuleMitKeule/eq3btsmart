@@ -1,19 +1,15 @@
+from __future__ import annotations
+
 import asyncio
-from datetime import datetime, timedelta
-from typing import Callable, Type
+from datetime import datetime, time, timedelta
+from typing import Any, Awaitable, Callable, Type
 
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakError
 
-from eq3btsmart.adapter.eq3_away_time import Eq3AwayTime
-from eq3btsmart.adapter.eq3_duration import Eq3Duration
-from eq3btsmart.adapter.eq3_serial import Eq3Serial
-from eq3btsmart.adapter.eq3_temperature import Eq3Temperature
-from eq3btsmart.adapter.eq3_temperature_offset import Eq3TemperatureOffset
 from eq3btsmart.const import (
-    NOTIFY_CHARACTERISTIC_UUID,
-    WRITE_CHARACTERISTIC_UUID,
+    Eq3Characteristic,
     StatusFlags,
+    WeekDay,
 )
 from eq3btsmart.structures import (
     AwaySetCommand,
@@ -31,6 +27,7 @@ from eq3btsmart.structures import (
     PresetsStruct,
     ScheduleDayStruct,
     ScheduleGetCommand,
+    ScheduleHourStruct,
     ScheduleSetCommand,
     StatusStruct,
     TemperatureSetCommand,
@@ -38,72 +35,75 @@ from eq3btsmart.structures import (
 )
 
 mock_id = DeviceDataStruct(
-    version=1, unknown_1=0, unknown_2=0, serial=Eq3Serial("serial1234"), unknown_3=0
+    version=1, unknown_1=0, unknown_2=0, serial="serial1234", unknown_3=0
 )
 
 
+mock_presets = PresetsStruct(
+    comfort_temp=21,
+    eco_temp=17,
+    window_open_temp=12,
+    window_open_time=timedelta(minutes=5),
+    offset=0,
+)
 mock_status = StatusStruct(
     mode=StatusFlags.MANUAL,
     valve=0x10,
-    target_temp=Eq3Temperature(21),
+    target_temp=21,
 )
-mock_status.away = Eq3AwayTime(datetime.now() - timedelta(days=1))
-mock_status.presets = PresetsStruct(
-    comfort_temp=Eq3Temperature(21),
-    eco_temp=Eq3Temperature(17),
-    window_open_temp=Eq3Temperature(12),
-    window_open_time=Eq3Duration(timedelta(minutes=5)),
-    offset=Eq3TemperatureOffset(0),
-)
+mock_status.presets = mock_presets
+mock_status.away = datetime.now() - timedelta(days=1)
 
 
-mock_schedule_days: list[ScheduleDayStruct] = []
+mock_schedule_days: list[ScheduleDayStruct] = [
+    ScheduleDayStruct(
+        day=week_day,
+        hours=[
+            ScheduleHourStruct(
+                target_temp=21,
+                next_change_at=time(hour=0, minute=0),
+            )
+        ],
+    )
+    for week_day in WeekDay
+]
 
 
 class MockClient:
     def __init__(
         self,
         device: BLEDevice,
-        disconnected_callback: Callable | None = None,
+        disconnected_callback: Callable[[MockClient], None] | None = None,
         timeout: int = 10,
     ):
         self.device = device
         self._is_connected: bool = False
-        self._notify_callbacks: list[Callable] = []
-        self._disconnected_callback: Callable | None = disconnected_callback
+        self._notify_callbacks: list[Callable[[str, bytes], Awaitable[None]]] = []
+        self._disconnected_callback: Callable[[MockClient], None] | None = (
+            disconnected_callback
+        )
         self._timeout: int = timeout
         self._last_command: Eq3Struct | None = None
-        self._loop = asyncio.get_event_loop()
         self._fail_on_connect: bool = False
 
     @property
-    def is_connected(self):
+    def is_connected(self) -> bool:
         return self._is_connected
 
-    def set_disconnected_callback(self, callback: Callable):
-        self._disconnected_callback = callback
-
-    async def connect(self, **kwargs):
-        if self._fail_on_connect:
-            raise BleakError()
-
+    async def connect(self, **kwargs: dict[str, Any]) -> None:
         self._is_connected = True
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         self._is_connected = False
         if self._disconnected_callback:
             self._disconnected_callback(self)
 
-    async def start_notify(self, char: str, callback: Callable):
-        if char != NOTIFY_CHARACTERISTIC_UUID:
-            raise BleakError()
-
+    async def start_notify(
+        self, char: str, callback: Callable[[str, bytes], Awaitable[None]]
+    ) -> None:
         self._notify_callbacks.append(callback)
 
-    async def write_gatt_char(self, char: str, data: bytes):
-        if char != WRITE_CHARACTERISTIC_UUID:
-            raise BleakError()
-
+    async def write_gatt_char(self, char: str, data: bytes) -> None:
         command_types: list[Type[Eq3Struct]] = [
             IdGetCommand,
             InfoGetCommand,
@@ -128,57 +128,28 @@ class MockClient:
             except Exception:
                 continue
 
-        if isinstance(
-            command,
-            (
-                ComfortEcoConfigureCommand,
-                OffsetConfigureCommand,
-                WindowOpenConfigureCommand,
-            ),
-        ):
-            if mock_status.away is None:
-                mock_status.away = Eq3AwayTime(datetime.now() + timedelta(days=1))
-
-            if mock_status.presets is None:
-                mock_status.presets = PresetsStruct(
-                    comfort_temp=Eq3Temperature(21),
-                    eco_temp=Eq3Temperature(17),
-                    window_open_temp=Eq3Temperature(12),
-                    window_open_time=Eq3Duration(timedelta(minutes=5)),
-                    offset=Eq3TemperatureOffset(0),
-                )
-
         if isinstance(command, WindowOpenConfigureCommand):
-            if mock_status.presets is None:
-                raise Exception("Presets not set")
-
             window_open_configure_command: WindowOpenConfigureCommand = command
 
-            mock_status.presets.window_open_temp = (
+            mock_presets.window_open_temp = (
                 window_open_configure_command.window_open_temperature
             )
-            mock_status.presets.window_open_time = (
+            mock_presets.window_open_time = (
                 window_open_configure_command.window_open_time
             )
 
         if isinstance(command, ComfortEcoConfigureCommand):
-            if mock_status.presets is None:
-                raise Exception("Presets not set")
-
             comfort_eco_configure_command: ComfortEcoConfigureCommand = command
 
-            mock_status.presets.comfort_temp = (
+            mock_presets.comfort_temp = (
                 comfort_eco_configure_command.comfort_temperature
             )
-            mock_status.presets.eco_temp = comfort_eco_configure_command.eco_temperature
+            mock_presets.eco_temp = comfort_eco_configure_command.eco_temperature
 
         if isinstance(command, OffsetConfigureCommand):
-            if mock_status.presets is None:
-                raise Exception("Presets not set")
-
             offset_configure_command: OffsetConfigureCommand = command
 
-            mock_status.presets.offset = offset_configure_command.offset
+            mock_presets.offset = offset_configure_command.offset
 
         if isinstance(command, ModeSetCommand):
             mode_set_command: ModeSetCommand = command
@@ -199,26 +170,16 @@ class MockClient:
             mock_status.mode = mode
 
             if temp is not None:
-                mock_status.target_temp = Eq3Temperature(temp / 2)
-
-        if isinstance(command, AwaySetCommand):
-            if mock_status.away is None:
-                mock_status.away = command.away_until
+                mock_status.target_temp = temp / 2
 
         if isinstance(command, TemperatureSetCommand):
             mock_status.target_temp = command.temperature
 
         if isinstance(command, ComfortSetCommand):
-            if mock_status.presets is None:
-                raise Exception("Presets not set")
-
-            mock_status.target_temp = mock_status.presets.comfort_temp
+            mock_status.target_temp = mock_presets.comfort_temp
 
         if isinstance(command, EcoSetCommand):
-            if mock_status.presets is None:
-                raise Exception("Presets not set")
-
-            mock_status.target_temp = mock_status.presets.eco_temp
+            mock_status.target_temp = mock_presets.eco_temp
 
         if isinstance(command, BoostSetCommand):
             if command.enable:
@@ -239,38 +200,33 @@ class MockClient:
                     for schedule_day in mock_schedule_days
                     if schedule_day.day == command.day
                 ),
-                None,
+                ScheduleDayStruct(day=command.day, hours=[]),
             )
-
-            if schedule_day is None:
-                schedule_day = ScheduleDayStruct(
-                    day=command.day,
-                    hours=command.hours,
-                )
-                mock_schedule_days.append(schedule_day)
-            else:
-                schedule_day.hours = command.hours
+            schedule_day.hours = command.hours
 
         self._last_command = command
 
         await self.respond()
 
-    async def respond(self):
-        if not self._is_connected:
-            return
-
-        if self._last_command is None:
-            return
-
+    async def respond(self) -> None:
         if isinstance(self._last_command, (ScheduleGetCommand, ScheduleSetCommand)):
-            for mock_schedule in mock_schedule_days:
-                data = mock_schedule.to_bytes()
-                for callback in self._notify_callbacks:
-                    callback(
-                        NOTIFY_CHARACTERISTIC_UUID,
-                        data,
-                    )
-            return
+            mock_schedule_day = next(
+                (
+                    schedule_day
+                    for schedule_day in mock_schedule_days
+                    if schedule_day.day == self._last_command.day
+                ),
+                ScheduleDayStruct(
+                    day=self._last_command.day,
+                    hours=[
+                        ScheduleHourStruct(
+                            target_temp=21,
+                            next_change_at=time(hour=0, minute=0),
+                        )
+                    ],
+                ),
+            )
+            data = mock_schedule_day.to_bytes()
 
         if isinstance(self._last_command, IdGetCommand):
             data = mock_id.to_bytes()
@@ -293,10 +249,12 @@ class MockClient:
         ):
             data = mock_status.to_bytes()
 
+        asyncio.create_task(self.notify(data))
+        self._last_command = None
+
+    async def notify(self, data: bytes) -> None:
         for callback in self._notify_callbacks:
-            callback(
-                NOTIFY_CHARACTERISTIC_UUID,
+            await callback(
+                Eq3Characteristic.NOTIFY,
                 data,
             )
-
-        self._last_command = None

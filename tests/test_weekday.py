@@ -1,7 +1,7 @@
 from eq3btsmart.const import WeekDay
 
 
-def test_from_index():
+def test_from_index() -> None:
     assert WeekDay.from_index(0) == WeekDay.MONDAY
     assert WeekDay.from_index(1) == WeekDay.TUESDAY
     assert WeekDay.from_index(2) == WeekDay.WEDNESDAY

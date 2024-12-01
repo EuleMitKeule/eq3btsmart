@@ -1,6 +1,6 @@
 """Constants for the eq3btsmart library."""
 
-from enum import Enum, IntEnum
+from enum import IntEnum, StrEnum, auto
 
 from construct_typed import EnumBase, FlagsEnumBase
 
@@ -12,19 +12,18 @@ EQ3BT_ON_TEMP = 30.0
 EQ3BT_MIN_OFFSET = -3.5
 EQ3BT_MAX_OFFSET = 3.5
 
-WRITE_CHARACTERISTIC_UUID = "3fa4585a-ce4a-3bad-db4b-b8df8179ea09"
-NOTIFY_CHARACTERISTIC_UUID = "d0e8434d-cd29-0996-af41-6c90f4e0eb2a"
-
-REQUEST_TIMEOUT = 10
-RETRY_BACK_OFF_FACTOR = 0.25
-RETRIES = 14
-MONITOR_INTERVAL = 10
-
-DEFAULT_AWAY_HOURS = 30 * 24
-DEFAULT_AWAY_TEMP = 12
+DEFAULT_CONNECTION_TIMEOUT = 10
+DEFAULT_COMMAND_TIMEOUT = 5
 
 
-class Command(IntEnum):
+class Eq3Characteristic(StrEnum):
+    """Characteristics."""
+
+    WRITE = "3fa4585a-ce4a-3bad-db4b-b8df8179ea09"
+    NOTIFY = "d0e8434d-cd29-0996-af41-6c90f4e0eb2a"
+
+
+class Command(EnumBase):
     ID_GET = 0x00
     ID_RETURN = 0x01
     INFO_RETURN = 0x02
@@ -62,7 +61,7 @@ class WeekDay(EnumBase):
         return cls(adjusted_index)
 
 
-class OperationMode(EnumBase):
+class OperationMode(IntEnum):
     """Operation modes."""
 
     AUTO = 0x00
@@ -86,8 +85,18 @@ class StatusFlags(FlagsEnumBase):
     LOW_BATTERY = 0x80
 
 
-class Eq3Preset(Enum):
+class Eq3Preset(IntEnum):
     """Preset modes."""
 
     COMFORT = 0
     ECO = 1
+
+
+class Eq3Event(StrEnum):
+    """Event types."""
+
+    CONNECTED = auto()
+    DISCONNECTED = auto()
+    DEVICE_DATA_RECEIVED = auto()
+    STATUS_RECEIVED = auto()
+    SCHEDULE_RECEIVED = auto()
