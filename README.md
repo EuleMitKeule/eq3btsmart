@@ -11,4 +11,5 @@
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=EuleMitKeule_eq3btsmart&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=EuleMitKeule_eq3btsmart)
 
 # eQ-3 Bluetooth Smart Thermostats
+
 A Python library for interaction with [eQ-3 Bluetooth Smart Thermostat](https://www.eq-3.de/produkte/eqiva/detail/bluetooth-smart-heizkoerperthermostat.html) devices using [bleak](https://github.com/hbldh/bleak) and `asyncio`.

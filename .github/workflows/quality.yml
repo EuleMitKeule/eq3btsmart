@@ -28,38 +28,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-        with:
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached Poetry venv
-        id: cached-poetry-venv
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Install dependencies
-        if: steps.cached-poetry-venv.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
-
-      - name: Install package
-        run: poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
   ruff:
     needs: cache
@@ -73,30 +50,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run ruff
         run: |
-          poetry run ruff eq3btsmart
+          uv run ruff check .
 
   mypy:
     needs: cache
@@ -110,30 +76,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run mypy
         run: |
-          poetry run mypy eq3btsmart
+          uv run mypy --strict .
+
+  codespell:
+    needs: cache
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+
+      - name: Install dependecies
+        run: uv sync --all-groups
+
+      - name: Run codespell
+        run: |
+          uv run codespell --dictionary codespell.dict --ignore-words-list eQ-3 --skip="__pycache__" eq3btsmart tests
 
   tests:
     needs: cache
@@ -147,30 +128,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run tests
         run: |
-          poetry run pytest --cov=eq3btsmart --cov-report=xml --cov-report=term tests
+          uv run pytest --cov=. --cov-report=term tests
 
   sonar:
     needs: cache
@@ -186,34 +156,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python-version }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run tests
         run: |
-          poetry run pytest --cov=eq3btsmart --cov-report=xml --cov-report=term tests
+          uv run pytest --cov=. --cov-report=xml --cov-report=term tests
 
       - name: fix code coverage paths
         run: |
-          sed -i 's/\/home\/runner\/work\/eq3btsmart\/eq3btsmart\//\/github\/workspace\//g' coverage.xml
+          sed -i 's|/home/runner/work/eq3btsmart/eq3btsmart|/github/workspace|g' coverage.xml
 
       - name: Run SonarCloud analysis
         uses: sonarsource/sonarcloud-github-action@master
@@ -225,6 +184,7 @@ jobs:
             -Dsonar.organization=${{ env.SONAR_PROJECT_ORGANIZATION }}
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.sources=eq3btsmart
-            -Dsonar.tests=tests
+            -Dsonar.sources=/github/workspace/eq3btsmart
+            -Dsonar.tests=/github/workspace/tests
             -Dsonar.python.version=${{ matrix.python-version }}
+            -Dsonar.text.inclusions=**/*.py

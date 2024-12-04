@@ -1,0 +1,112 @@
+site_name: eq3btsmart
+
+site_url: https://eq3btsmart.github.io/
+site_description: "Python library to communicate with eQ-3 Bluetooth Smart Thermostat devices"
+site_author: "Lennard Beers"
+copyright: "Copyright &copy; 2024 Lennard Beers"
+repo_url: https://github.com/eulemitkeule/eq3btsmart/
+repo_name: EuleMitKeule/eq3btsmart
+
+theme:
+  icon:
+    repo: fontawesome/brands/github
+  name: "material"
+  palette:
+    - scheme: default
+      media: "(prefers-color-scheme: dark)"
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: "material/weather-night"
+        name: Switch to light mode
+
+    - scheme: slate
+      media: "(prefers-color-scheme: light)"
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: "material/weather-sunny"
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.sections
+    - navigation.path
+    - navigation.indexes
+    - toc.follow
+    - navigation.top
+
+
+extra:
+  generator: false
+  consent:
+    title: Cookie consent
+    description: >-
+      We use cookies to recognize your repeated visits and preferences, as well
+      as to measure the effectiveness of our documentation and whether users
+      find what they're searching for. With your consent, you're helping us to
+      make our documentation better.
+    actions:
+      - accept
+      - manage
+      - reject
+  social:
+    - icon: fontawesome/brands/github
+      name: View on GitHub
+      link: https://github.com/eulemitkeule/eq3btsmart/
+    - icon: fontawesome/brands/discord
+      name: Message me on Discord
+      link: https://discord.com/users/434825782268002304
+
+plugins:
+  - search:
+  - privacy:
+  - gen-files:
+      scripts:
+      - scripts/generate_reference.py
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_if_no_docstring: true
+            inherited_members: true
+            members_order: source
+            separate_signature: true
+            unwrap_annotated: true
+            filters:
+            - '!^_'
+            merge_init_into_class: false
+            signature_crossrefs: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+
+markdown_extensions:
+  - toc:
+      permalink: "#"
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Introduction: index.md
+  - Getting started:
+    - Installation: getting_started/installation.md
+    - Pairing: getting_started/pairing.md
+    - Basic Usage: getting_started/basic_usage.md
+    - Registering Callbacks: getting_started/registering_callbacks.md
+    - Exceptions: getting_started/exceptions.md
+  - Reference:
+    - thermostat: reference/thermostat.md
+    - models: reference/models.md
+    - exceptions: reference/exceptions.md
+    - const: reference/const.md
+  - About:
+    - Credits: about/credits.md
+    - License: about/license.md
+    - Sponsor: about/sponsor.md

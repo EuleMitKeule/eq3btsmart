@@ -1,593 +1,1453 @@
+import asyncio
 from datetime import datetime, time, timedelta
+from unittest.mock import (
+    AsyncMock,
+    MagicMock,
+    PropertyMock,
+    call,
+    create_autospec,
+    patch,
+)
 
 import pytest
+from bleak.exc import BleakError
 
-from eq3btsmart.adapter.eq3_duration import Eq3Duration
-from eq3btsmart.adapter.eq3_schedule_time import Eq3ScheduleTime
-from eq3btsmart.adapter.eq3_serial import Eq3Serial
-from eq3btsmart.adapter.eq3_temperature import Eq3Temperature
-from eq3btsmart.adapter.eq3_temperature_offset import Eq3TemperatureOffset
-from eq3btsmart.const import (
-    DEFAULT_AWAY_HOURS,
-    EQ3BT_ON_TEMP,
-    Command,
-    Eq3Preset,
-    OperationMode,
-    WeekDay,
+from eq3btsmart._adapters import _Eq3Temperature
+from eq3btsmart._structures import (
+    _AwaySetCommand,
+    _BoostSetCommand,
+    _ComfortEcoConfigureCommand,
+    _ComfortSetCommand,
+    _DeviceDataStruct,
+    _EcoSetCommand,
+    _Eq3Message,
+    _Eq3Struct,
+    _IdGetCommand,
+    _InfoGetCommand,
+    _LockSetCommand,
+    _ModeSetCommand,
+    _OffsetConfigureCommand,
+    _ScheduleDayStruct,
+    _ScheduleHourStruct,
+    _ScheduleSetCommand,
+    _StatusStruct,
+    _TemperatureSetCommand,
+    _WindowOpenConfigureCommand,
 )
-from eq3btsmart.models.schedule import Schedule
-from eq3btsmart.models.schedule_day import ScheduleDay
-from eq3btsmart.models.schedule_hour import ScheduleHour
-from eq3btsmart.models.status import Status
-from eq3btsmart.structures import Eq3Command, ScheduleDayStruct, ScheduleHourStruct
+from eq3btsmart.const import (
+    EQ3_OFF_TEMP,
+    EQ3_ON_TEMP,
+    Eq3Event,
+    Eq3OperationMode,
+    Eq3Preset,
+    Eq3WeekDay,
+    _Eq3Characteristic,
+    _Eq3Command,
+    _Eq3StatusFlags,
+)
+from eq3btsmart.exceptions import (
+    Eq3AlreadyAwaitingResponseException,
+    Eq3CommandException,
+    Eq3ConnectionException,
+    Eq3InternalException,
+    Eq3InvalidDataException,
+    Eq3StateException,
+    Eq3TimeoutException,
+)
+from eq3btsmart.models import DeviceData, Schedule, ScheduleDay, ScheduleHour, Status
 from eq3btsmart.thermostat import Thermostat
-from tests.mock_client import MockClient
 
 
 @pytest.mark.asyncio
-async def test_connect_disconnect(mock_thermostat: Thermostat):
-    assert isinstance(mock_thermostat._conn, MockClient)
-    assert not mock_thermostat._conn.is_connected
+async def test_connect(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat._conn, "connect", new_callable=AsyncMock
+        ) as mock_connect,
+        patch.object(
+            thermostat._conn, "start_notify", new_callable=AsyncMock
+        ) as mock_start_notify,
+        patch.object(
+            thermostat, "async_get_status", new_callable=AsyncMock
+        ) as mock_get_status,
+        patch.object(
+            thermostat, "async_get_device_data", new_callable=AsyncMock
+        ) as mock_get_device_data,
+        patch.object(
+            thermostat, "async_get_schedule", new_callable=AsyncMock
+        ) as mock_get_schedule,
+        patch.object(
+            thermostat, "_trigger_event", new_callable=AsyncMock
+        ) as mock_trigger_event,
+    ):
+        await thermostat.async_connect()
 
-    await mock_thermostat.async_connect()
-
-    assert mock_thermostat._conn.is_connected
-
-    await mock_thermostat.async_disconnect()
-
-    assert not mock_thermostat._conn.is_connected
-
-
-@pytest.mark.asyncio
-async def test_update_callback(mock_thermostat: Thermostat):
-    assert mock_thermostat._on_update_callbacks == []
-
-    called: bool = False
-
-    def on_update():
-        nonlocal called
-        called = True
-
-    mock_thermostat.register_update_callback(on_update)
-
-    assert mock_thermostat._on_update_callbacks == [on_update]
-
-    await mock_thermostat.async_connect()
-
-    await mock_thermostat.async_get_status()
-
-    assert called
-
-
-@pytest.mark.asyncio
-async def test_connection_callback(mock_thermostat: Thermostat):
-    assert mock_thermostat._on_connection_callbacks == []
-
-    called: bool = False
-
-    def on_connection(is_connected: bool):
-        nonlocal called
-        called = is_connected
-
-    mock_thermostat.register_connection_callback(on_connection)
-
-    assert mock_thermostat._on_connection_callbacks == [on_connection]
-
-    await mock_thermostat.async_connect()
-
-    assert called
-
-
-@pytest.mark.asyncio
-async def test_get_id(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    initial_device_data = mock_thermostat.device_data
-
-    from tests.mock_client import mock_id
-
-    mock_id.version = 100
-
-    await mock_thermostat.async_get_id()
-
-    assert mock_thermostat.device_data is not None
-    assert isinstance(mock_thermostat.device_data.device_serial, Eq3Serial)
-    assert mock_thermostat.device_data.device_serial == mock_id.serial
-    assert initial_device_data != mock_thermostat.device_data
-
-
-@pytest.mark.asyncio
-async def test_get_status(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    initial_status = mock_thermostat.status
-
-    from tests.mock_client import mock_status
-
-    mock_status.valve = 0x0F
-
-    await mock_thermostat.async_get_status()
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.valve == 0x0F
-    assert initial_status != mock_thermostat.status
-
-
-@pytest.mark.asyncio
-async def test_get_schedule(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    assert len(mock_thermostat.schedule.schedule_days) == 0
-
-    from tests.mock_client import mock_schedule_days
-
-    mock_schedule_days.append(
-        ScheduleDayStruct(
-            day=WeekDay.MONDAY,
-            hours=[
-                ScheduleHourStruct(
-                    target_temp=Eq3Temperature(20),
-                    next_change_at=Eq3ScheduleTime(time(hour=1, minute=0)),
-                ),
-            ],
-        )
-    )
-
-    await mock_thermostat.async_get_schedule()
-
-    assert mock_thermostat.schedule is not None
-    assert len(mock_thermostat.schedule.schedule_days) == 1
-
-
-@pytest.mark.asyncio
-async def test_configure_window_open(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    await mock_thermostat.async_configure_window_open(6.5, timedelta(minutes=25))
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.presets is not None
-    assert mock_thermostat.status.presets.window_open_temperature == Eq3Temperature(6.5)
-    assert mock_thermostat.status.presets.window_open_time == Eq3Duration(
-        timedelta(minutes=25)
-    )
-
-
-@pytest.mark.asyncio
-async def test_configure_presets(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.MANUAL,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=None,
-    )
-
-    await mock_thermostat.async_configure_presets(
-        26.5,
-        16,
-    )
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.presets is not None
-    assert mock_thermostat.status.presets.comfort_temperature == Eq3Temperature(26.5)
-    assert mock_thermostat.status.presets.eco_temperature == Eq3Temperature(16.0)
-
-
-@pytest.mark.asyncio
-async def test_configure_comfort_without_status(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    mock_thermostat.status = None
-
-    with pytest.raises(Exception):
-        await mock_thermostat.async_configure_comfort_temperature(
-            26.5,
+        mock_connect.assert_called_once()
+        mock_start_notify.assert_called_once()
+        mock_get_status.assert_called_once()
+        mock_get_device_data.assert_called_once()
+        mock_get_schedule.assert_called_once()
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.CONNECTED,
+            device_data=thermostat.device_data,
+            status=thermostat.status,
+            schedule=thermostat.schedule,
         )
 
 
 @pytest.mark.asyncio
-async def test_configure_eco_without_status(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_connect_already_connected(thermostat: Thermostat) -> None:
+    with patch.object(
+        Thermostat, "is_connected", new_callable=PropertyMock
+    ) as mock_is_connected:
+        mock_is_connected.return_value = True
 
-    mock_thermostat.status = None
-
-    with pytest.raises(Exception):
-        await mock_thermostat.async_configure_eco_temperature(16)
-
-
-@pytest.mark.asyncio
-async def test_configure_temperature_offset(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    await mock_thermostat.async_configure_temperature_offset(2.5)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.presets is not None
-    assert mock_thermostat.status.presets.offset_temperature == Eq3TemperatureOffset(
-        2.5
-    )
+        with pytest.raises(Eq3StateException, match="Already connected"):
+            await thermostat.async_connect()
 
 
 @pytest.mark.asyncio
-async def test_set_mode(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.MANUAL,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=None,
-    )
-
-    await mock_thermostat.async_set_mode(OperationMode.AUTO)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.operation_mode == OperationMode.AUTO
+async def test_connect_bleak_error(thermostat: Thermostat) -> None:
+    with patch.object(thermostat._conn, "connect", side_effect=BleakError):
+        with pytest.raises(
+            Eq3ConnectionException, match="Could not connect to the device"
+        ):
+            await thermostat.async_connect()
 
 
 @pytest.mark.asyncio
-async def test_set_mode_without_status(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    mock_thermostat.status = None
-
-    with pytest.raises(Exception):
-        await mock_thermostat.async_set_mode(OperationMode.AUTO)
+async def test_connect_timeout_error(thermostat: Thermostat) -> None:
+    with patch.object(thermostat._conn, "connect", side_effect=TimeoutError):
+        with pytest.raises(Eq3TimeoutException, match="Timeout during connection"):
+            await thermostat.async_connect()
 
 
 @pytest.mark.asyncio
-async def test_set_mode_manual(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_disconnect(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat._conn, "disconnect", new_callable=AsyncMock
+        ) as mock_disconnect,
+        patch.object(
+            Thermostat, "is_connected", new_callable=PropertyMock
+        ) as mock_is_connected,
+    ):
+        mock_is_connected.return_value = True
 
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.AUTO,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=None,
-    )
+        await thermostat.async_disconnect()
 
-    await mock_thermostat.async_set_mode(OperationMode.MANUAL)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.operation_mode == OperationMode.MANUAL
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(21.0)
+        mock_disconnect.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_set_mode_off(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_disconnect_not_connected(thermostat: Thermostat) -> None:
+    with patch.object(
+        Thermostat, "is_connected", new_callable=PropertyMock
+    ) as mock_is_connected:
+        mock_is_connected.return_value = False
 
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.AUTO,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=None,
-    )
-
-    await mock_thermostat.async_set_mode(OperationMode.OFF)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.operation_mode == OperationMode.OFF
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(4.5)
+        with pytest.raises(Eq3StateException, match="Not connected"):
+            await thermostat.async_disconnect()
 
 
 @pytest.mark.asyncio
-async def test_set_mode_on(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_disconnect_bleak_error(thermostat: Thermostat) -> None:
+    with (
+        patch.object(thermostat._conn, "disconnect", side_effect=BleakError),
+        patch.object(
+            Thermostat, "is_connected", new_callable=PropertyMock
+        ) as mock_is_connected,
+    ):
+        mock_is_connected.return_value = True
 
-    mock_thermostat.status = Status(
-        valve=10,
-        target_temperature=Eq3Temperature(21.0),
-        _operation_mode=OperationMode.AUTO,
-        is_away=False,
-        is_boost=False,
-        is_dst=False,
-        is_window_open=False,
-        is_locked=False,
-        is_low_battery=False,
-        away_until=None,
-        presets=None,
-    )
-
-    await mock_thermostat.async_set_mode(OperationMode.ON)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.operation_mode == OperationMode.ON
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(30)
+        with pytest.raises(
+            Eq3ConnectionException, match="Could not disconnect from the device"
+        ):
+            await thermostat.async_disconnect()
 
 
 @pytest.mark.asyncio
-async def test_set_away(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_disconnect_timeout_error(thermostat: Thermostat) -> None:
+    with (
+        patch.object(thermostat._conn, "disconnect", side_effect=TimeoutError),
+        patch.object(
+            Thermostat, "is_connected", new_callable=PropertyMock
+        ) as mock_is_connected,
+    ):
+        mock_is_connected.return_value = True
 
-    datetime_now = datetime.now()
-    await mock_thermostat.async_set_away(True)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.is_away
-    assert mock_thermostat.status.away_until is not None
-
-    minute_difference = (
-        mock_thermostat.status.away_until.value
-        - (datetime_now + timedelta(hours=DEFAULT_AWAY_HOURS))
-    ).total_seconds() / 60
-
-    assert minute_difference <= 30
+        with pytest.raises(Eq3TimeoutException, match="Timeout during disconnection"):
+            await thermostat.async_disconnect()
 
 
 @pytest.mark.asyncio
-async def test_set_away_disabled(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_disconnect_with_pending_futures(thermostat: Thermostat) -> None:
+    thermostat._device_data_future = asyncio.Future()
+    thermostat._status_future = asyncio.Future()
+    thermostat._schedule_future = asyncio.Future()
 
-    await mock_thermostat.async_get_status()
+    with (
+        patch.object(thermostat._conn, "disconnect", new_callable=AsyncMock),
+        patch.object(
+            Thermostat, "is_connected", new_callable=PropertyMock
+        ) as mock_is_connected,
+    ):
+        mock_is_connected.return_value = True
 
-    await mock_thermostat.async_set_mode(OperationMode.MANUAL)
+        await thermostat.async_disconnect()
 
-    await mock_thermostat.async_set_away(False)
-
-    assert mock_thermostat.status is not None
-    assert not mock_thermostat.status.is_away
-    assert mock_thermostat.status.operation_mode == OperationMode.AUTO
-
-
-@pytest.mark.asyncio
-async def test_set_temperature(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    await mock_thermostat.async_get_status()
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature != Eq3Temperature(23.5)
-
-    await mock_thermostat.async_set_temperature(23.5)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(23.5)
+        assert thermostat._device_data_future.done()
+        assert thermostat._status_future.done()
+        assert thermostat._schedule_future.done()
+        assert isinstance(
+            thermostat._device_data_future.exception(), Eq3ConnectionException
+        )
+        assert isinstance(thermostat._status_future.exception(), Eq3ConnectionException)
+        assert isinstance(
+            thermostat._schedule_future.exception(), Eq3ConnectionException
+        )
 
 
 @pytest.mark.asyncio
-async def test_set_temperature_off(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_get_device_data(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat,
+        "_async_write_command_with_device_data_response",
+        new_callable=AsyncMock,
+    ) as mock_write_command:
+        await thermostat.async_get_device_data()
 
-    await mock_thermostat.async_get_status()
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature != Eq3Temperature(4.5)
-    assert mock_thermostat.status.operation_mode != OperationMode.OFF
-
-    await mock_thermostat.async_set_temperature(4.5)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(4.5)
-    assert mock_thermostat.status.operation_mode == OperationMode.OFF
+        mock_write_command.assert_called_once_with(_IdGetCommand())
 
 
 @pytest.mark.asyncio
-async def test_set_temperature_on(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_get_status(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch("eq3btsmart.thermostat.datetime", autospec=True) as mock_datetime,
+    ):
+        now = datetime.now()
+        mock_datetime.now.return_value = now
 
-    await mock_thermostat.async_get_status()
+        await thermostat.async_get_status()
 
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature != Eq3Temperature(30)
-    assert mock_thermostat.status.operation_mode != OperationMode.ON
-
-    await mock_thermostat.async_set_temperature(EQ3BT_ON_TEMP)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(30)
-    assert mock_thermostat.status.operation_mode == OperationMode.ON
-
-
-@pytest.mark.asyncio
-async def test_set_preset_comfort(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    await mock_thermostat.async_get_status()
-    await mock_thermostat.async_set_temperature(26)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(26.0)
-
-    await mock_thermostat.async_configure_presets(
-        comfort_temperature=21, eco_temperature=17
-    )
-    await mock_thermostat.async_set_preset(Eq3Preset.COMFORT)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(21.0)
+        mock_write_command.assert_called_once_with(_InfoGetCommand(time=now))
 
 
 @pytest.mark.asyncio
-async def test_set_preset_eco(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_get_schedule(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat,
+        "_async_write_commands_with_schedule_response",
+        new_callable=AsyncMock,
+    ) as mock_write_command:
+        await thermostat.async_get_schedule()
 
-    await mock_thermostat.async_get_status()
-    await mock_thermostat.async_set_temperature(26)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(26.0)
-
-    await mock_thermostat.async_configure_presets(
-        comfort_temperature=21, eco_temperature=17
-    )
-    await mock_thermostat.async_set_preset(Eq3Preset.ECO)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.target_temperature == Eq3Temperature(17.0)
+        assert mock_write_command.called
+        assert len(mock_write_command.call_args.args[0]) == 7
 
 
 @pytest.mark.asyncio
-async def test_set_boost(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_device_data(thermostat: Thermostat) -> None:
+    device_data = MagicMock()
+    thermostat._last_device_data = device_data
 
-    await mock_thermostat.async_get_status()
-
-    assert mock_thermostat.status is not None
-    assert not mock_thermostat.status.is_boost
-    assert mock_thermostat.status.operation_mode == OperationMode.MANUAL
-
-    await mock_thermostat.async_set_boost(True)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.is_boost
-    assert mock_thermostat.status.operation_mode == OperationMode.MANUAL
-
-    await mock_thermostat.async_set_boost(False)
-
-    assert mock_thermostat.status is not None
-    assert not mock_thermostat.status.is_boost
-    assert mock_thermostat.status.operation_mode == OperationMode.MANUAL
+    assert thermostat.device_data == device_data
 
 
 @pytest.mark.asyncio
-async def test_set_locked(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_device_data_not_set(thermostat: Thermostat) -> None:
+    thermostat._last_device_data = None
 
-    await mock_thermostat.async_get_status()
-
-    assert mock_thermostat.status is not None
-    assert not mock_thermostat.status.is_locked
-
-    await mock_thermostat.async_set_locked(True)
-
-    assert mock_thermostat.status is not None
-    assert mock_thermostat.status.is_locked
-
-    await mock_thermostat.async_set_locked(False)
-
-    assert mock_thermostat.status is not None
-    assert not mock_thermostat.status.is_locked
+    with pytest.raises(Eq3StateException, match="Device data not set"):
+        _ = thermostat.device_data
 
 
 @pytest.mark.asyncio
-async def test_set_schedule(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
+async def test_status(thermostat: Thermostat) -> None:
+    status = MagicMock()
+    thermostat._last_status = status
 
-    await mock_thermostat.async_get_status()
+    assert thermostat.status == status
 
-    assert mock_thermostat.schedule is not None
 
-    assert len(mock_thermostat.schedule.schedule_days) == 0
+@pytest.mark.asyncio
+async def test_status_not_set(thermostat: Thermostat) -> None:
+    thermostat._last_status = None
 
-    schedule = Schedule(
-        schedule_days=[
-            ScheduleDay(
-                WeekDay.MONDAY,
-                schedule_hours=[
-                    ScheduleHour(
-                        Eq3Temperature(21),
-                        Eq3ScheduleTime(time(1, 0, 0)),
-                    )
-                ],
+    with pytest.raises(Eq3StateException, match="Status not set"):
+        _ = thermostat.status
+
+
+@pytest.mark.asyncio
+async def test_presets(thermostat: Thermostat) -> None:
+    thermostat._last_status = MagicMock()
+    presets = MagicMock()
+    thermostat._last_status.presets = presets
+
+    assert thermostat.presets == presets
+
+
+@pytest.mark.asyncio
+async def test_presets_not_set(thermostat: Thermostat) -> None:
+    thermostat._last_status = MagicMock()
+    thermostat._last_status.presets = None
+
+    with pytest.raises(Eq3StateException, match="Presets not set"):
+        _ = thermostat.presets
+
+
+@pytest.mark.asyncio
+async def test_schedule(thermostat: Thermostat) -> None:
+    schedule = MagicMock()
+    thermostat._last_schedule = schedule
+
+    assert thermostat.schedule == schedule
+
+
+@pytest.mark.asyncio
+async def test_schedule_not_set(thermostat: Thermostat) -> None:
+    thermostat._last_schedule = None
+
+    with pytest.raises(Eq3StateException, match="Schedule not set"):
+        _ = thermostat.schedule
+
+
+@pytest.mark.asyncio
+async def test_set_temperature(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_set_temperature(21.0)
+
+        mock_write_command.assert_called_once_with(
+            _TemperatureSetCommand(temperature=21.0)
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_temperature_off(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            thermostat, "async_set_mode", new_callable=AsyncMock
+        ) as mock_set_mode,
+    ):
+        await thermostat.async_set_temperature(EQ3_OFF_TEMP)
+
+        mock_write_command.assert_not_called()
+        mock_set_mode.assert_called_once_with(Eq3OperationMode.OFF)
+
+
+@pytest.mark.asyncio
+async def test_set_temperature_on(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            thermostat, "async_set_mode", new_callable=AsyncMock
+        ) as mock_set_mode,
+    ):
+        await thermostat.async_set_temperature(EQ3_ON_TEMP)
+
+        mock_write_command.assert_not_called()
+        mock_set_mode.assert_called_once_with(Eq3OperationMode.ON)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode, command",
+    [
+        (
+            Eq3OperationMode.MANUAL,
+            _ModeSetCommand(mode=Eq3OperationMode.MANUAL | _Eq3Temperature.encode(20)),
+        ),
+        (
+            Eq3OperationMode.AUTO,
+            _ModeSetCommand(mode=Eq3OperationMode.AUTO),
+        ),
+        (
+            Eq3OperationMode.ON,
+            _ModeSetCommand(
+                mode=Eq3OperationMode.MANUAL | _Eq3Temperature.encode(EQ3_ON_TEMP)
+            ),
+        ),
+        (
+            Eq3OperationMode.OFF,
+            _ModeSetCommand(
+                mode=Eq3OperationMode.MANUAL | _Eq3Temperature.encode(EQ3_OFF_TEMP)
+            ),
+        ),
+    ],
+)
+async def test_set_mode(
+    thermostat: Thermostat, mode: Eq3OperationMode, command: _ModeSetCommand
+) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            Thermostat, "status", new_callable=PropertyMock
+        ) as mock_status_property,
+    ):
+        mock_status = MagicMock()
+        mock_status.target_temperature = 20.0
+        mock_status_property.return_value = mock_status
+        await thermostat.async_set_mode(mode)
+
+        mock_write_command.assert_called_once_with(command)
+
+
+@pytest.mark.asyncio
+async def test_set_invalid_mode(thermostat: Thermostat) -> None:
+    with patch.object(thermostat, "_async_write_command_with_status_response"):
+        with pytest.raises(Eq3InvalidDataException, match="Unsupported operation mode"):
+            await thermostat.async_set_mode(Eq3OperationMode.AWAY)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "preset, command",
+    [
+        (
+            Eq3Preset.COMFORT,
+            _ComfortSetCommand(),
+        ),
+        (
+            Eq3Preset.ECO,
+            _EcoSetCommand(),
+        ),
+    ],
+)
+async def test_set_preset(
+    thermostat: Thermostat, preset: Eq3Preset, command: _Eq3Command
+) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_set_preset(preset)
+
+        mock_write_command.assert_called_once_with(command)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enable", [True, False])
+async def test_set_boost(thermostat: Thermostat, enable: bool) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_set_boost(enable)
+
+        mock_write_command.assert_called_once_with(_BoostSetCommand(enable=enable))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enable", [True, False])
+async def test_set_locked(thermostat: Thermostat, enable: bool) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_set_locked(enable)
+
+        mock_write_command.assert_called_once_with(_LockSetCommand(enable=enable))
+
+
+@pytest.mark.asyncio
+async def test_set_away(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        now = datetime.now()
+        await thermostat.async_set_away(now, 21.0)
+
+        mock_write_command.assert_called_once_with(
+            _AwaySetCommand(
+                mode=Eq3OperationMode.AWAY | _Eq3Temperature.encode(21.0),
+                away_until=now,
             )
-        ]
-    )
-
-    await mock_thermostat.async_set_schedule(schedule)
-
-    assert mock_thermostat.schedule is not None
-    assert mock_thermostat.schedule == schedule
+        )
 
 
 @pytest.mark.asyncio
-async def test_delete_schedule(mock_thermostat: Thermostat):
-    await mock_thermostat.async_connect()
-
-    await mock_thermostat.async_get_status()
-
-    assert mock_thermostat.schedule is not None
-    assert len(mock_thermostat.schedule.schedule_days) == 0
-
-    await mock_thermostat.async_set_schedule(
-        Schedule(
+async def test_set_schedule(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat,
+        "_async_write_commands_with_schedule_response",
+        new_callable=AsyncMock,
+    ) as mock_write_command:
+        schedule = Schedule(
             schedule_days=[
                 ScheduleDay(
-                    WeekDay.MONDAY,
+                    Eq3WeekDay.TUESDAY,
                     schedule_hours=[
-                        ScheduleHour(
-                            Eq3Temperature(21),
-                            Eq3ScheduleTime(time(1, 0, 0)),
-                        )
+                        ScheduleHour(15.5, time(hour=1, minute=0)),
+                        ScheduleHour(28.5, time(hour=23, minute=30)),
                     ],
                 ),
                 ScheduleDay(
-                    WeekDay.TUESDAY,
+                    Eq3WeekDay.WEDNESDAY,
                     schedule_hours=[
-                        ScheduleHour(
-                            Eq3Temperature(21),
-                            Eq3ScheduleTime(time(1, 0, 0)),
-                        )
-                    ],
-                ),
-                ScheduleDay(
-                    WeekDay.WEDNESDAY,
-                    schedule_hours=[
-                        ScheduleHour(
-                            Eq3Temperature(21),
-                            Eq3ScheduleTime(time(1, 0, 0)),
-                        )
+                        ScheduleHour(12.5, time(hour=12, minute=30)),
+                        ScheduleHour(23.0, time(hour=15, minute=00)),
                     ],
                 ),
             ]
         )
+        await thermostat.async_set_schedule(schedule)
+
+        mock_write_command.assert_called_once_with(
+            [
+                _ScheduleSetCommand(
+                    day=schedule.schedule_days[0].week_day,
+                    hours=[
+                        _ScheduleHourStruct(
+                            target_temp=schedule.schedule_days[0]
+                            .schedule_hours[0]
+                            .target_temperature,
+                            next_change_at=schedule.schedule_days[0]
+                            .schedule_hours[0]
+                            .next_change_at,
+                        ),
+                        _ScheduleHourStruct(
+                            target_temp=schedule.schedule_days[0]
+                            .schedule_hours[1]
+                            .target_temperature,
+                            next_change_at=schedule.schedule_days[0]
+                            .schedule_hours[1]
+                            .next_change_at,
+                        ),
+                    ],
+                ),
+                _ScheduleSetCommand(
+                    day=schedule.schedule_days[1].week_day,
+                    hours=[
+                        _ScheduleHourStruct(
+                            target_temp=schedule.schedule_days[1]
+                            .schedule_hours[0]
+                            .target_temperature,
+                            next_change_at=schedule.schedule_days[1]
+                            .schedule_hours[0]
+                            .next_change_at,
+                        ),
+                        _ScheduleHourStruct(
+                            target_temp=schedule.schedule_days[1]
+                            .schedule_hours[1]
+                            .target_temperature,
+                            next_change_at=schedule.schedule_days[1]
+                            .schedule_hours[1]
+                            .next_change_at,
+                        ),
+                    ],
+                ),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_delete_schedule(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat,
+        "_async_write_commands_with_schedule_response",
+        new_callable=AsyncMock,
+    ) as mock_write_command:
+        await thermostat.async_delete_schedule()
+
+        mock_write_command.assert_called_once_with(
+            [_ScheduleSetCommand(day=day, hours=[]) for day in Eq3WeekDay]
+        )
+
+
+@pytest.mark.asyncio
+async def test_delete_schedule_single_day(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat,
+        "_async_write_commands_with_schedule_response",
+        new_callable=AsyncMock,
+    ) as mock_write_command:
+        await thermostat.async_delete_schedule(Eq3WeekDay.MONDAY)
+
+        mock_write_command.assert_called_once_with(
+            [_ScheduleSetCommand(day=Eq3WeekDay.MONDAY, hours=[])]
+        )
+
+
+@pytest.mark.asyncio
+async def test_delete_schedule_multiple_days(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat,
+        "_async_write_commands_with_schedule_response",
+        new_callable=AsyncMock,
+    ) as mock_write_command:
+        await thermostat.async_delete_schedule([Eq3WeekDay.MONDAY, Eq3WeekDay.TUESDAY])
+
+        mock_write_command.assert_called_once_with(
+            [
+                _ScheduleSetCommand(day=Eq3WeekDay.MONDAY, hours=[]),
+                _ScheduleSetCommand(day=Eq3WeekDay.TUESDAY, hours=[]),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_presets(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_configure_presets(26.5, 16.0)
+
+        mock_write_command.assert_called_once_with(
+            _ComfortEcoConfigureCommand(
+                comfort_temperature=26.5,
+                eco_temperature=16.0,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_comfort_temperature(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            Thermostat, "presets", new_callable=PropertyMock
+        ) as mock_presets_property,
+    ):
+        mock_presets = MagicMock()
+        mock_presets.eco_temperature = 19.5
+        mock_presets_property.return_value = mock_presets
+
+        await thermostat.async_configure_comfort_temperature(25.5)
+
+        mock_write_command.assert_called_once_with(
+            _ComfortEcoConfigureCommand(comfort_temperature=25.5, eco_temperature=19.5)
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_eco_temperature(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            Thermostat, "presets", new_callable=PropertyMock
+        ) as mock_presets_property,
+    ):
+        mock_presets = MagicMock()
+        mock_presets.comfort_temperature = 19.5
+        mock_presets_property.return_value = mock_presets
+
+        await thermostat.async_configure_eco_temperature(15.5)
+
+        mock_write_command.assert_called_once_with(
+            _ComfortEcoConfigureCommand(comfort_temperature=19.5, eco_temperature=15.5)
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_temperature_offset(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_configure_temperature_offset(2.5)
+
+        mock_write_command.assert_called_once_with(_OffsetConfigureCommand(offset=2.5))
+
+
+@pytest.mark.asyncio
+async def test_configure_window_open(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_configure_window_open(6.5, timedelta(minutes=25))
+
+        mock_write_command.assert_called_once_with(
+            _WindowOpenConfigureCommand(
+                window_open_temperature=6.5,
+                window_open_time=timedelta(minutes=25),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_window_open_float(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat, "_async_write_command_with_status_response", new_callable=AsyncMock
+    ) as mock_write_command:
+        await thermostat.async_configure_window_open(6.5, 25)
+
+        mock_write_command.assert_called_once_with(
+            _WindowOpenConfigureCommand(
+                window_open_temperature=6.5,
+                window_open_time=timedelta(minutes=25),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_window_open_temperature(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            Thermostat, "presets", new_callable=PropertyMock
+        ) as mock_presets_property,
+    ):
+        mock_presets = MagicMock()
+        mock_presets.window_open_time = timedelta(minutes=15)
+        mock_presets_property.return_value = mock_presets
+
+        await thermostat.async_configure_window_open_temperature(7.5)
+
+        mock_write_command.assert_called_once_with(
+            _WindowOpenConfigureCommand(
+                window_open_temperature=7.5,
+                window_open_time=timedelta(minutes=15),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_window_open_duration(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            Thermostat, "presets", new_callable=PropertyMock
+        ) as mock_presets_property,
+    ):
+        mock_presets = MagicMock()
+        mock_presets.window_open_temperature = 7.5
+        mock_presets_property.return_value = mock_presets
+
+        await thermostat.async_configure_window_open_duration(timedelta(minutes=25))
+
+        mock_write_command.assert_called_once_with(
+            _WindowOpenConfigureCommand(
+                window_open_temperature=7.5,
+                window_open_time=timedelta(minutes=25),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_configure_window_open_duration_float(thermostat: Thermostat) -> None:
+    with (
+        patch.object(
+            thermostat,
+            "_async_write_command_with_status_response",
+            new_callable=AsyncMock,
+        ) as mock_write_command,
+        patch.object(
+            Thermostat, "presets", new_callable=PropertyMock
+        ) as mock_presets_property,
+    ):
+        mock_presets = MagicMock()
+        mock_presets.window_open_temperature = 7.5
+        mock_presets_property.return_value = mock_presets
+
+        await thermostat.async_configure_window_open_duration(25.0)
+
+        mock_write_command.assert_called_once_with(
+            _WindowOpenConfigureCommand(
+                window_open_temperature=7.5,
+                window_open_time=timedelta(minutes=25),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_aenter_aexit() -> None:
+    with (
+        patch.object(
+            Thermostat, "async_connect", new_callable=AsyncMock
+        ) as mock_connect,
+        patch.object(
+            Thermostat, "async_disconnect", new_callable=AsyncMock
+        ) as mock_disconnect,
+    ):
+        async with Thermostat("00:11:22:33:44:55"):
+            mock_connect.assert_called_once()
+
+        mock_disconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_write_command_with_device_data_response(thermostat: Thermostat) -> None:
+    mock_command = MagicMock()
+    mock_device_data = MagicMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+
+        async def resolve_future() -> None:
+            assert thermostat._device_data_future is not None
+            thermostat._device_data_future.set_result(mock_device_data)
+
+        asyncio.create_task(resolve_future())
+
+        result = await thermostat._async_write_command_with_device_data_response(
+            mock_command
+        )
+
+        mock_write_command.assert_called_once_with(mock_command)
+        assert result == mock_device_data
+        assert thermostat._device_data_future is None
+
+
+@pytest.mark.asyncio
+async def test_write_command_with_device_data_response_already_awaiting_response(
+    thermostat: Thermostat,
+) -> None:
+    mock_command = MagicMock()
+    thermostat._device_data_future = AsyncMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+        with pytest.raises(
+            Eq3AlreadyAwaitingResponseException,
+            match="Already awaiting a device data command response",
+        ):
+            await thermostat._async_write_command_with_device_data_response(
+                mock_command
+            )
+
+        mock_write_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_command_with_device_data_response_timeout(
+    thermostat: Thermostat,
+) -> None:
+    mock_command = MagicMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+        thermostat._command_timeout = 0
+
+        with pytest.raises(
+            Eq3TimeoutException, match="Timeout during device data command"
+        ):
+            await thermostat._async_write_command_with_device_data_response(
+                mock_command
+            )
+
+        mock_write_command.assert_called_once_with(mock_command)
+        assert thermostat._device_data_future is None
+
+
+@pytest.mark.asyncio
+async def test_write_command_with_status_response(thermostat: Thermostat) -> None:
+    mock_command = MagicMock()
+    mock_status = MagicMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+
+        async def resolve_future() -> None:
+            assert thermostat._status_future is not None
+            thermostat._status_future.set_result(mock_status)
+
+        asyncio.create_task(resolve_future())
+
+        result = await thermostat._async_write_command_with_status_response(
+            mock_command
+        )
+
+        mock_write_command.assert_called_once_with(mock_command)
+        assert result == mock_status
+        assert thermostat._status_future is None
+
+
+@pytest.mark.asyncio
+async def test_write_command_with_status_response_already_awaiting_response(
+    thermostat: Thermostat,
+) -> None:
+    mock_command = MagicMock()
+    thermostat._status_future = AsyncMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+        with pytest.raises(
+            Eq3AlreadyAwaitingResponseException,
+            match="Already awaiting a status command response",
+        ):
+            await thermostat._async_write_command_with_status_response(mock_command)
+
+        mock_write_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_command_with_status_response_timeout(
+    thermostat: Thermostat,
+) -> None:
+    mock_command = MagicMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+        thermostat._command_timeout = 0
+
+        with pytest.raises(Eq3TimeoutException, match="Timeout during status command"):
+            await thermostat._async_write_command_with_status_response(mock_command)
+
+        mock_write_command.assert_called_once_with(mock_command)
+        assert thermostat._status_future is None
+
+
+@pytest.mark.asyncio
+async def test_write_commands_with_schedule_response(thermostat: Thermostat) -> None:
+    mock_commands = [create_autospec(_Eq3Struct) for _ in range(7)]
+    mock_schedule = MagicMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+
+        async def resolve_future() -> None:
+            assert thermostat._schedule_future is not None
+            thermostat._schedule_future.set_result(mock_schedule)
+
+        asyncio.create_task(resolve_future())
+
+        result = await thermostat._async_write_commands_with_schedule_response(
+            mock_commands
+        )
+
+        mock_write_command.assert_has_calls(
+            [call(command) for command in mock_commands]
+        )
+        assert result == mock_schedule
+        assert thermostat._schedule_future is None
+
+
+@pytest.mark.asyncio
+async def test_write_commands_with_schedule_response_already_awaiting_response(
+    thermostat: Thermostat,
+) -> None:
+    mock_commands = [
+        create_autospec(
+            _Eq3Struct,
+        )
+        for _ in range(7)
+    ]
+    thermostat._schedule_future = AsyncMock()
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+        with pytest.raises(
+            Eq3AlreadyAwaitingResponseException,
+            match="Already awaiting a schedule command response",
+        ):
+            await thermostat._async_write_commands_with_schedule_response(mock_commands)
+
+        mock_write_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_commands_with_schedule_response_timeout(
+    thermostat: Thermostat,
+) -> None:
+    mock_commands = [create_autospec(_Eq3Struct) for _ in range(7)]
+
+    with patch.object(
+        thermostat, "_async_write_command", new_callable=AsyncMock
+    ) as mock_write_command:
+        thermostat._command_timeout = 0
+
+        with pytest.raises(
+            Eq3TimeoutException, match="Timeout during schedule command"
+        ):
+            await thermostat._async_write_commands_with_schedule_response(mock_commands)
+
+        mock_write_command.assert_has_calls(
+            [call(command) for command in mock_commands]
+        )
+        assert thermostat._schedule_future is None
+
+
+@pytest.mark.asyncio
+async def test_write_command(thermostat: Thermostat) -> None:
+    mock_command = MagicMock()
+
+    with (
+        patch.object(
+            thermostat._conn, "write_gatt_char", new_callable=AsyncMock
+        ) as mock_write_gatt_char,
+        patch.object(
+            Thermostat, "is_connected", new_callable=PropertyMock
+        ) as mock_is_connected,
+    ):
+        mock_is_connected.return_value = True
+
+        await thermostat._async_write_command(mock_command)
+
+        mock_write_gatt_char.assert_called_once_with(
+            _Eq3Characteristic.WRITE, mock_command.to_bytes()
+        )
+
+
+@pytest.mark.asyncio
+async def test_write_command_not_connected(thermostat: Thermostat) -> None:
+    mock_command = MagicMock()
+
+    with patch.object(
+        thermostat._conn, "write_gatt_char", new_callable=AsyncMock
+    ) as mock_write_gatt_char:
+        with pytest.raises(Eq3StateException, match="Not connected"):
+            await thermostat._async_write_command(mock_command)
+
+        mock_write_gatt_char.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_command_bleak_error(thermostat: Thermostat) -> None:
+    mock_command = MagicMock()
+
+    with (
+        patch.object(thermostat._conn, "write_gatt_char", side_effect=BleakError),
+        patch.object(
+            Thermostat, "is_connected", new_callable=PropertyMock
+        ) as mock_is_connected,
+    ):
+        mock_is_connected.return_value = True
+
+        with pytest.raises(Eq3CommandException, match="Error during write"):
+            await thermostat._async_write_command(mock_command)
+
+
+@pytest.mark.asyncio
+async def test_write_command_timeout_error(thermostat: Thermostat) -> None:
+    mock_command = MagicMock()
+
+    with (
+        patch.object(thermostat._conn, "write_gatt_char", side_effect=TimeoutError),
+        patch.object(
+            Thermostat, "is_connected", new_callable=PropertyMock
+        ) as mock_is_connected,
+    ):
+        thermostat._command_timeout = 0
+        mock_is_connected.return_value = True
+
+        with pytest.raises(Eq3TimeoutException, match="Timeout during write"):
+            await thermostat._async_write_command(mock_command)
+
+
+@pytest.mark.asyncio
+async def test_on_disconnected(thermostat: Thermostat) -> None:
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        thermostat._on_disconnected(MagicMock())
+
+        mock_trigger_event.assert_called_once_with(Eq3Event.DISCONNECTED)
+
+
+@pytest.mark.asyncio
+async def test_on_message_received_device_data(thermostat: Thermostat) -> None:
+    command = _DeviceDataStruct(
+        version=0, unknown_1=0, unknown_2=0, serial="0000000000", unknown_3=0
+    )
+    data = command.to_bytes()
+    characteristic = MagicMock()
+
+    with patch.object(
+        thermostat, "_on_device_data_received", new_callable=AsyncMock
+    ) as mock_on_device_data_received:
+        await thermostat._on_message_received(characteristic, bytearray(data))
+
+        mock_on_device_data_received.assert_called_once_with(
+            DeviceData._from_bytes(data)
+        )
+
+
+@pytest.mark.asyncio
+async def test_on_message_received_status(thermostat: Thermostat) -> None:
+    command = _StatusStruct(mode=_Eq3StatusFlags.MANUAL, valve=0, target_temp=4.5)
+    data = command.to_bytes()
+    characteristic = MagicMock()
+
+    with patch.object(
+        thermostat, "_on_status_received", new_callable=AsyncMock
+    ) as mock_on_status_received:
+        await thermostat._on_message_received(characteristic, bytearray(data))
+
+        mock_on_status_received.assert_called_once_with(Status._from_bytes(data))
+
+
+@pytest.mark.asyncio
+async def test_on_message_received_status_invalid_data(thermostat: Thermostat) -> None:
+    command = _StatusStruct(
+        mode=_Eq3StatusFlags.MANUAL,
+        valve=0,
+        target_temp=4.5,
+    )
+    data = bytearray(command.to_bytes())
+    data[1] = 0
+    characteristic = MagicMock()
+
+    with patch.object(
+        thermostat, "_on_status_received", new_callable=AsyncMock
+    ) as mock_on_status_received:
+        await thermostat._on_message_received(characteristic, data)
+
+        mock_on_status_received.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_on_message_received_schedule(thermostat: Thermostat) -> None:
+    command = _ScheduleDayStruct(
+        day=Eq3WeekDay.MONDAY,
+        hours=[
+            _ScheduleHourStruct(
+                target_temp=20.5, next_change_at=time(hour=1, minute=0)
+            ),
+            _ScheduleHourStruct(
+                target_temp=22.5, next_change_at=time(hour=23, minute=30)
+            ),
+        ],
+    )
+    data = command.to_bytes()
+    characteristic = MagicMock()
+
+    with patch.object(
+        thermostat, "_on_schedule_received", new_callable=AsyncMock
+    ) as mock_on_schedule_received:
+        await thermostat._on_message_received(characteristic, bytearray(data))
+
+        mock_on_schedule_received.assert_called_once_with(Schedule._from_bytes(data))
+
+
+@pytest.mark.asyncio
+async def test_on_message_received_unknown(thermostat: Thermostat) -> None:
+    command = _Eq3Message(cmd=0xFF, is_status_command=False, data=b"")
+    data = command.to_bytes()
+    characteristic = MagicMock()
+
+    with pytest.raises(Eq3InternalException, match="Unknown command"):
+        await thermostat._on_message_received(characteristic, bytearray(data))
+
+
+@pytest.mark.asyncio
+async def test_on_device_data_received(thermostat: Thermostat) -> None:
+    device_data = MagicMock()
+
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        await thermostat._on_device_data_received(device_data)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.DEVICE_DATA_RECEIVED, device_data=device_data
+        )
+
+
+@pytest.mark.asyncio
+async def test_on_device_data_received_with_future(thermostat: Thermostat) -> None:
+    device_data = MagicMock()
+    thermostat._device_data_future = asyncio.Future()
+
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        await thermostat._on_device_data_received(device_data)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.DEVICE_DATA_RECEIVED, device_data=device_data
+        )
+        assert thermostat._device_data_future.done()
+        assert thermostat._device_data_future.result() == device_data
+
+
+@pytest.mark.asyncio
+async def test_on_status_received(thermostat: Thermostat) -> None:
+    status = MagicMock()
+
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        await thermostat._on_status_received(status)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.STATUS_RECEIVED, status=status
+        )
+
+
+@pytest.mark.asyncio
+async def test_on_status_received_with_future(thermostat: Thermostat) -> None:
+    status = MagicMock()
+    thermostat._status_future = asyncio.Future()
+
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        await thermostat._on_status_received(status)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.STATUS_RECEIVED, status=status
+        )
+        assert thermostat._status_future.done()
+        assert thermostat._status_future.result() == status
+
+
+@pytest.mark.asyncio
+async def test_on_schedule_received(thermostat: Thermostat) -> None:
+    schedule = MagicMock()
+
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        await thermostat._on_schedule_received(schedule)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
+        )
+
+
+@pytest.mark.asyncio
+async def test_on_schedule_received_with_future(thermostat: Thermostat) -> None:
+    schedule = MagicMock()
+    thermostat._schedule_future = asyncio.Future()
+    thermostat._schedule_future_counter = 1
+
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        await thermostat._on_schedule_received(schedule)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
+        )
+        assert thermostat._schedule_future.done()
+        assert thermostat._schedule_future.result() == schedule
+
+
+@pytest.mark.asyncio
+async def test_on_schedule_received_with_future_multiple(
+    thermostat: Thermostat,
+) -> None:
+    schedule = MagicMock()
+    thermostat._schedule_future = asyncio.Future()
+    thermostat._schedule_future_counter = 2
+
+    with patch.object(
+        thermostat, "_trigger_event", new_callable=AsyncMock
+    ) as mock_trigger_event:
+        await thermostat._on_schedule_received(schedule)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
+        )
+        assert not thermostat._schedule_future.done()
+
+        mock_trigger_event.reset_mock()
+
+        await thermostat._on_schedule_received(schedule)
+
+        mock_trigger_event.assert_called_once_with(
+            Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
+        )
+        assert thermostat._schedule_future.done()
+
+
+@pytest.mark.asyncio
+async def test_register_callback(thermostat: Thermostat) -> None:
+    callback = lambda: None
+
+    thermostat.register_callback(Eq3Event.DISCONNECTED, callback)
+
+    assert thermostat._callbacks[Eq3Event.DISCONNECTED] == [callback]
+
+    thermostat.register_callback(Eq3Event.DISCONNECTED, callback)
+
+    assert thermostat._callbacks[Eq3Event.DISCONNECTED] == [callback]
+
+
+@pytest.mark.asyncio
+async def test_unregister_event(thermostat: Thermostat) -> None:
+    callback = lambda: None
+
+    assert thermostat._callbacks[Eq3Event.DISCONNECTED] == []
+
+    thermostat.unregister_callback(Eq3Event.DISCONNECTED, callback)
+
+    assert thermostat._callbacks[Eq3Event.DISCONNECTED] == []
+
+    thermostat.register_callback(Eq3Event.DISCONNECTED, callback)
+
+    assert thermostat._callbacks[Eq3Event.DISCONNECTED] == [callback]
+
+    thermostat.unregister_callback(Eq3Event.DISCONNECTED, callback)
+
+    assert thermostat._callbacks[Eq3Event.DISCONNECTED] == []
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_connected(thermostat: Thermostat) -> None:
+    device_data = DeviceData(321, "0000011111")
+    status = Status(
+        0, 20.5, Eq3OperationMode.AUTO, False, False, True, False, True, False
+    )
+    schedule = Schedule()
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.CONNECTED] = [callback]
+
+    await thermostat._trigger_event(
+        Eq3Event.CONNECTED, device_data=device_data, status=status, schedule=schedule
     )
 
-    assert len(mock_thermostat.schedule.schedule_days) == 3
-    assert len(mock_thermostat.schedule.schedule_days[0].schedule_hours) == 1
-
-    await mock_thermostat.async_delete_schedule(WeekDay.MONDAY)
-
-    assert len(mock_thermostat.schedule.schedule_days) == 3
-    assert len(mock_thermostat.schedule.schedule_days[0].schedule_hours) == 0
-
-    await mock_thermostat.async_delete_schedule()
-
-    assert len(mock_thermostat.schedule.schedule_days) == 7
-    for schedule_day in mock_thermostat.schedule.schedule_days:
-        assert len(schedule_day.schedule_hours) == 0
+    callback.assert_called_once_with(device_data, status, schedule)
 
 
 @pytest.mark.asyncio
-async def test_write_not_connected(mock_thermostat: Thermostat):
-    with pytest.raises(Exception):
-        await mock_thermostat.async_set_boost(True)
+async def test_trigger_event_connected_invalid_data(thermostat: Thermostat) -> None:
+    device_data = DeviceData(321, "0000011111")
+    status = Status(
+        0, 20.5, Eq3OperationMode.AUTO, False, False, True, False, True, False
+    )
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.CONNECTED] = [callback]
 
-
-@pytest.mark.asyncio
-async def test_fail_on_invalid_notification(mock_thermostat: Thermostat):
-    with pytest.raises(Exception):
-        mock_thermostat.on_notification(
-            "invalid",  # type: ignore
-            Eq3Command(cmd=Command.ID_RETURN, data=b"\x01").to_bytes(),
+    with pytest.raises(Eq3InternalException, match="must not be None for"):
+        await thermostat._trigger_event(
+            Eq3Event.CONNECTED,
+            device_data=device_data,
+            status=status,
+            schedule=None,  # type: ignore
         )
+
+    callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_disconnected(thermostat: Thermostat) -> None:
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.DISCONNECTED] = [callback]
+
+    await thermostat._trigger_event(Eq3Event.DISCONNECTED)
+
+    callback.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_device_data_received(thermostat: Thermostat) -> None:
+    device_data = DeviceData(321, "0000011111")
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.DEVICE_DATA_RECEIVED] = [callback]
+
+    await thermostat._trigger_event(
+        Eq3Event.DEVICE_DATA_RECEIVED, device_data=device_data
+    )
+
+    callback.assert_called_once_with(device_data)
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_device_data_received_invalid_data(
+    thermostat: Thermostat,
+) -> None:
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.DEVICE_DATA_RECEIVED] = [callback]
+
+    with pytest.raises(Eq3InternalException, match="must not be None for"):
+        await thermostat._trigger_event(Eq3Event.DEVICE_DATA_RECEIVED, device_data=None)  # type: ignore
+
+    callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_status_received(thermostat: Thermostat) -> None:
+    status = Status(
+        0, 20.5, Eq3OperationMode.AUTO, False, False, True, False, True, False
+    )
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.STATUS_RECEIVED] = [callback]
+
+    await thermostat._trigger_event(Eq3Event.STATUS_RECEIVED, status=status)
+
+    callback.assert_called_once_with(status)
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_status_received_invalid_data(
+    thermostat: Thermostat,
+) -> None:
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.STATUS_RECEIVED] = [callback]
+
+    with pytest.raises(Eq3InternalException, match="must not be None for"):
+        await thermostat._trigger_event(Eq3Event.STATUS_RECEIVED, status=None)  # type: ignore
+
+    callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_schedule_received(thermostat: Thermostat) -> None:
+    schedule = Schedule()
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.SCHEDULE_RECEIVED] = [callback]
+
+    await thermostat._trigger_event(Eq3Event.SCHEDULE_RECEIVED, schedule=schedule)
+
+    callback.assert_called_once_with(schedule)
+
+
+@pytest.mark.asyncio
+async def test_trigger_event_schedule_received_invalid_data(
+    thermostat: Thermostat,
+) -> None:
+    callback = MagicMock()
+    thermostat._callbacks[Eq3Event.SCHEDULE_RECEIVED] = [callback]
+
+    with pytest.raises(Eq3InternalException, match="must not be None for"):
+        await thermostat._trigger_event(Eq3Event.SCHEDULE_RECEIVED, schedule=None)  # type: ignore
+
+    callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def tests_trigger_event_connected_async(thermostat: Thermostat) -> None:
+    device_data = DeviceData(321, "0000011111")
+    status = Status(
+        0, 20.5, Eq3OperationMode.AUTO, False, False, True, False, True, False
+    )
+    schedule = Schedule()
+    callback = AsyncMock()
+    thermostat._callbacks[Eq3Event.CONNECTED] = [callback]
+
+    await thermostat._trigger_event(
+        Eq3Event.CONNECTED, device_data=device_data, status=status, schedule=schedule
+    )
+
+    callback.assert_called_once_with(device_data, status, schedule)
