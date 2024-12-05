@@ -1,17 +1,6 @@
-# Welcome to MkDocs
 
-For full documentation visit [mkdocs.org](https://www.mkdocs.org).
+# `eq3btsmart` Documentation
 
-## Commands
+This is the documentation for the `eq3btsmart` library, which allows you to interact with your [eQ-3 Bluetooth Smart thermostats](https://www.eq-3.de/produkte/eqiva/detail/bluetooth-smart-heizkoerperthermostat.html).
 
-* `mkdocs new [dir-name]` - Create a new project.
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
-
-## Project layout
-
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+It is primarily used by the Home Assistant core integration [eq3btsmart](https://github.com/home-assistant/core/tree/dev/homeassistant/components/eq3btsmart).

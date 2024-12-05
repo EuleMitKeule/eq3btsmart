@@ -174,6 +174,7 @@ class Thermostat:
             Eq3StateException: If the thermostat is already connected.
             Eq3ConnectionException: If the connection fails.
             Eq3TimeoutException: If the connection times out.
+            Eq3CommandException: If an error occurs while sending a command.
         """
         if self.is_connected:
             raise Eq3StateException("Already connected")
@@ -242,8 +243,10 @@ class Thermostat:
             DeviceData: The device data.
 
         Raises:
+            Eq3StateException: If the thermostat is not connected.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3AlreadyAwaitingResponseException: If a device data command is already pending.
         """
         return await self._async_write_command_with_device_data_response(
             _IdGetCommand()
@@ -256,8 +259,10 @@ class Thermostat:
             Status: The status.
 
         Raises:
+            Eq3StateException: If the thermostat is not connected.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
         """
         return await self._async_write_command_with_status_response(
             _InfoGetCommand(time=datetime.now())
@@ -270,15 +275,35 @@ class Thermostat:
             Schedule: The schedule.
 
         Raises:
+            Eq3StateException: If the thermostat is not connected.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
         """
         return await self._async_write_commands_with_schedule_response(
             [_ScheduleGetCommand(day=week_day) for week_day in Eq3WeekDay]
         )
 
     async def async_set_temperature(self, temperature: float) -> Status:
-        """Set new target temperature."""
+        """Set the target temperature.
+
+        Temperatures are in degrees Celsius and specified in 0.5 degree increments.
+        If the temperature is EQ3_OFF_TEMP, the thermostat will be turned off.
+        If the temperature is EQ3_ON_TEMP, the thermostat will be turned on.
+
+        Args:
+            temperature (float): The new target temperature in degrees Celsius.
+
+        Returns:
+            Status: The updated status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3CommandException: If an error occurs during the command.
+            Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperature is invalid.
+        """
         if temperature == EQ3_OFF_TEMP:
             return await self.async_set_mode(Eq3OperationMode.OFF)
 
@@ -290,7 +315,21 @@ class Thermostat:
         )
 
     async def async_set_mode(self, operation_mode: Eq3OperationMode) -> Status:
-        """Set new operation mode."""
+        """Set the operation mode.
+
+        Args:
+            operation_mode (Eq3OperationMode): The new operation mode.
+
+        Returns:
+            Status: The updated status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3CommandException: If an error occurs during the command.
+            Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the operation mode is not supported.
+        """
         command: _ModeSetCommand
 
         match operation_mode:
@@ -317,7 +356,20 @@ class Thermostat:
         return await self._async_write_command_with_status_response(command)
 
     async def async_set_preset(self, preset: Eq3Preset) -> Status:
-        """Sets the thermostat to the given preset."""
+        """Activate a preset.
+
+        Args:
+            preset (Eq3Preset): The preset to activate.
+
+        Returns:
+            Status: The updated status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3CommandException: If an error occurs during the command.
+            Eq3TimeoutException: If the command times out.
+        """
         command: _ComfortSetCommand | _EcoSetCommand
 
         match preset:
@@ -329,13 +381,43 @@ class Thermostat:
         return await self._async_write_command_with_status_response(command)
 
     async def async_set_boost(self, enable: bool) -> Status:
-        """Sets boost mode."""
+        """Enable or disable the boost mode.
+
+        The boost mode will set the target temperature to EQ3_ON_TEMP for 300 seconds and then revert to the previous target temperature.
+
+        Args:
+            enable (bool): True to enable the boost mode, False to disable it.
+
+        Returns:
+            Status: The updated status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3CommandException: If an error occurs during the command.
+            Eq3TimeoutException: If the command times out.
+        """
         return await self._async_write_command_with_status_response(
             _BoostSetCommand(enable=enable)
         )
 
     async def async_set_locked(self, enable: bool) -> Status:
-        """Locks or unlocks the thermostat."""
+        """Lock or unlock the thermostat.
+
+        When locked, the thermostat's manual controls are disabled.
+
+        Args:
+            enable (bool): True to lock the thermostat, False to unlock it.
+
+        Returns:
+            Status: The updated status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3CommandException: If an error occurs during the command.
+            Eq3TimeoutException: If the command times out.
+        """
         return await self._async_write_command_with_status_response(
             _LockSetCommand(enable=enable)
         )
@@ -345,7 +427,26 @@ class Thermostat:
         away_until: datetime,
         temperature: float,
     ) -> Status:
-        """Set away mode."""
+        """Set the thermostat to away mode.
+
+        The thermostat will be set to away mode until the specified date and time.
+        The target temperature will be set to the specified temperature.
+        Temperatures are in degrees Celsius and specified in 0.5 degree increments.
+
+        Args:
+            away_until (datetime): The date and time until the thermostat should be in away mode.
+            temperature (float): The target temperature in degrees Celsius.
+
+        Returns:
+            Status: The updated status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3CommandException: If an error occurs during the command.
+            Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperature or date is invalid.
+        """
         return await self._async_write_command_with_status_response(
             _AwaySetCommand(
                 mode=Eq3OperationMode.AWAY | _Eq3Temperature.encode(temperature),
@@ -354,7 +455,10 @@ class Thermostat:
         )
 
     async def async_set_schedule(self, schedule: Schedule) -> Schedule:
-        """Sets the schedule.
+        """Set the schedule.
+
+        The schedule allows setting different target temperatures for each day of the week and different times of the day.
+        It is only applied when the thermostat is in AUTO mode.
 
         Args:
             schedule: The schedule to set.
@@ -363,8 +467,11 @@ class Thermostat:
             The updated schedule.
 
         Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If any of the schedule data is invalid.
         """
         return await self._async_write_commands_with_schedule_response(
             [
@@ -385,7 +492,7 @@ class Thermostat:
     async def async_delete_schedule(
         self, week_days: list[Eq3WeekDay] | Eq3WeekDay | None = None
     ) -> Schedule:
-        """Deletes the schedule for the specified week days.
+        """Delete the schedule for the specified week days.
 
         If no week days are specified, the schedule for all week days will be deleted.
 
@@ -395,6 +502,12 @@ class Thermostat:
 
         Returns:
             Schedule: The updated schedule after deletion.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
+            Eq3CommandException: If an error occurs during the command.
+            Eq3TimeoutException: If the command times out.
         """
         week_days = (
             [week_days]
@@ -425,8 +538,11 @@ class Thermostat:
             Status: The updated status.
 
         Raises:
+            Eq3StateException: If the presets are not available or the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperatures are invalid.
         """
         return await self._async_write_command_with_status_response(
             _ComfortEcoConfigureCommand(
@@ -451,8 +567,11 @@ class Thermostat:
             Status: The updated status.
 
         Raises:
+            Eq3StateException: If the presets are not available or the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperature is invalid.
         """
         return await self.async_configure_presets(
             comfort_temperature, self.presets.eco_temperature
@@ -472,9 +591,11 @@ class Thermostat:
             Status: The updated status.
 
         Raises:
-            Eq3StateException: If the presets are not available.
+            Eq3StateException: If the presets are not available or the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperature is invalid.
         """
         return await self.async_configure_presets(
             self.presets.comfort_temperature, eco_temperature
@@ -483,7 +604,29 @@ class Thermostat:
     async def async_configure_temperature_offset(
         self, temperature_offset: float
     ) -> Status:
-        """Sets the thermostat's temperature offset."""
+        """Configure the temperature offset.
+
+        The temperature offset is added to the measured temperature to determine the current temperature the thermostat is using internally for its calculations.
+        The initial value is 0.0 degrees Celsius.
+        The offset is specified in 0.5 degree increments.
+        The maximum offset is EQ3_MAX_TEMP_OFFSET and the minimum offset is EQ3_MIN_TEMP_OFFSET.
+
+        Example:
+            When the thermostat is set to 20.0 degrees and the actual temperature in the room is 18.0 degrees, the offset can be set to -2.0 degrees to align the thermostat with the actual temperature.
+
+        Args:
+            temperature_offset (float): The temperature offset in degrees Celsius.
+
+        Returns:
+            Status: The updated status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3CommandException: If an error occurs while sending the command.
+            Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperature is invalid.
+        """
         return await self._async_write_command_with_status_response(
             _OffsetConfigureCommand(offset=temperature_offset)
         )
@@ -506,8 +649,11 @@ class Thermostat:
             Status: The updated status.
 
         Raises:
+            Eq3StateException: If the presets are not available or the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperature or duration is invalid.
         """
         if isinstance(duration, float) or isinstance(duration, int):
             duration = timedelta(minutes=duration)
@@ -522,7 +668,7 @@ class Thermostat:
     async def async_configure_window_open_temperature(
         self, temperature: float
     ) -> Status:
-        """Configures the window open temperature.
+        """Configure the window open temperature.
 
         Temperatures are in degrees Celsius and specified in 0.5 degree increments.
         The initial value is 12.0 degrees Celsius.
@@ -534,8 +680,11 @@ class Thermostat:
             Status: The updated status.
 
         Raises:
+            Eq3StateException: If the presets are not available or the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the temperature is invalid.
         """
         return await self.async_configure_window_open(
             temperature, self.presets.window_open_time
@@ -545,7 +694,7 @@ class Thermostat:
         self,
         duration: timedelta | float,
     ) -> Status:
-        """Configures the window open duration.
+        """Configure the window open duration.
 
         The duration is specified in 5 minute increments.
         The initial value is 15 minutes.
@@ -558,8 +707,11 @@ class Thermostat:
             Status: The updated status.
 
         Raises:
+            Eq3StateException: If the presets are not available or the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
+            Eq3InvalidDataException: If the duration is invalid.
         """
         return await self.async_configure_window_open(
             self.presets.window_open_temperature, duration
@@ -570,7 +722,14 @@ class Thermostat:
     async def __aenter__(self) -> Self:
         """Async context manager enter.
 
-        Connects to the thermostat.
+        Connects to the thermostat. After connecting, the device data, status, and schedule will be queried and stored.
+        When the connection is established, the CONNECTED event will be triggered.
+
+        Raises:
+            Eq3StateException: If the thermostat is already connected.
+            Eq3ConnectionException: If the connection fails.
+            Eq3TimeoutException: If the connection times out.
+            Eq3CommandException: If an error occurs while sending a command.
         """
         await self.async_connect()
         return self
@@ -583,14 +742,33 @@ class Thermostat:
     ) -> None:
         """Async context manager exit.
 
-        Disconnects from the thermostat.
+        Disconnects from the thermostat. Before disconnection all pending futures will be cancelled.
+        When the disconnection is complete, the DISCONNECTED event will be triggered.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3ConnectionException: If the disconnection fails.
+            Eq3TimeoutException: If the disconnection times out.
         """
         await self.async_disconnect()
 
     async def _async_write_command_with_device_data_response(
         self, command: _Eq3Struct
     ) -> DeviceData:
-        """Write a command to the thermostat and wait for a device data response."""
+        """Write a command to the thermostat and wait for a device data response.
+
+        Args:
+            command (_Eq3Struct): The command to write.
+
+        Returns:
+            DeviceData: The device data.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a device data command is already pending.
+            Eq3TimeoutException: If the command times out.
+            Eq3CommandException: If an error occurs while sending the command.
+        """
         if self._device_data_future is not None:
             raise Eq3AlreadyAwaitingResponseException(
                 "Already awaiting a device data command response"
@@ -614,7 +792,20 @@ class Thermostat:
     async def _async_write_command_with_status_response(
         self, command: _Eq3Struct
     ) -> Status:
-        """Write a command to the thermostat and wait for a status response."""
+        """Write a command to the thermostat and wait for a status response.
+
+        Args:
+            command (_Eq3Struct): The command to write.
+
+        Returns:
+            Status: The status.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
+            Eq3TimeoutException: If the command times out.
+            Eq3CommandException: If an error occurs while sending the command.
+        """
         if self._status_future is not None:
             raise Eq3AlreadyAwaitingResponseException(
                 "Already awaiting a status command response"
@@ -636,7 +827,20 @@ class Thermostat:
     async def _async_write_commands_with_schedule_response(
         self, commands: list[_Eq3Struct]
     ) -> Schedule:
-        """Write commands to the thermostat and wait for a schedule response."""
+        """Write commands to the thermostat and wait for a schedule response.
+
+        Args:
+            commands (list[_Eq3Struct]): The commands to write.
+
+        Returns:
+            Schedule: The schedule.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
+            Eq3TimeoutException: If the command times out.
+            Eq3CommandException: If an error occurs while sending the command.
+        """
         if self._schedule_future is not None:
             raise Eq3AlreadyAwaitingResponseException(
                 "Already awaiting a schedule command response"
@@ -660,7 +864,16 @@ class Thermostat:
         return schedule
 
     async def _async_write_command(self, command: _Eq3Struct) -> None:
-        """Write a command to the thermostat."""
+        """Write a command to the thermostat.
+
+        Args:
+            command (_Eq3Struct): The command to write.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3CommandException: If an error occurs while sending the command.
+            Eq3TimeoutException: If the command times out.
+        """
         if not self.is_connected:
             raise Eq3StateException("Not connected")
 
@@ -705,7 +918,13 @@ class Thermostat:
                 raise Eq3InternalException(f"Unknown command: {command}")
 
     async def _on_device_data_received(self, device_data: DeviceData) -> None:
-        """Handle received device data."""
+        """Handle received device data.
+
+        Triggers the DEVICE_DATA_RECEIVED event.
+
+        Args:
+            device_data (DeviceData): The received device data.
+        """
         self._last_device_data = device_data
 
         if self._device_data_future is not None:
@@ -716,7 +935,13 @@ class Thermostat:
         )
 
     async def _on_status_received(self, status: Status) -> None:
-        """Handle received status."""
+        """Handle received status.
+
+        Triggers the STATUS_RECEIVED event.
+
+        Args:
+            status (Status): The received status.
+        """
         self._last_status = status
 
         if self._status_future is not None:
@@ -725,7 +950,13 @@ class Thermostat:
         await self._trigger_event(Eq3Event.STATUS_RECEIVED, status=status)
 
     async def _on_schedule_received(self, schedule: Schedule) -> None:
-        """Handle received schedule."""
+        """Handle received schedule.
+
+        Merges the received schedule with the last known schedule and triggers the SCHEDULE_RECEIVED event.
+
+        Args:
+            schedule (Schedule): The received schedule.
+        """
         if self._last_schedule is None:
             self._last_schedule = schedule
 
