@@ -211,8 +211,8 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bleak" },
-    { name = "construct-typing" },
+    { name = "bleak", specifier = ">=0.22.3" },
+    { name = "construct-typing", specifier = ">=0.6.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -225,8 +225,8 @@ dev = [
     { name = "ruff" },
 ]
 docs = [
-    { name = "mkdocs-gen-files", specifier = ">=0.5.0" },
-    { name = "mkdocs-literate-nav", specifier = ">=0.6.1" },
+    { name = "mkdocs-gen-files" },
+    { name = "mkdocs-literate-nav" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extras = ["python"] },
 ]

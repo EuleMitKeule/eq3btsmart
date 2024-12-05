@@ -12,20 +12,20 @@ theme:
     repo: fontawesome/brands/github
   name: "material"
   palette:
-    - scheme: default
+    - scheme: slate
       media: "(prefers-color-scheme: dark)"
       primary: indigo
       accent: orange
       toggle:
-        icon: "material/weather-night"
+        icon: "material/weather-sunny"
         name: Switch to light mode
 
-    - scheme: slate
+    - scheme: default
       media: "(prefers-color-scheme: light)"
       primary: indigo
       accent: orange
       toggle:
-        icon: "material/weather-sunny"
+        icon: "material/weather-night"
         name: Switch to dark mode
   features:
     - navigation.instant
@@ -41,17 +41,6 @@ theme:
 
 extra:
   generator: false
-  consent:
-    title: Cookie consent
-    description: >-
-      We use cookies to recognize your repeated visits and preferences, as well
-      as to measure the effectiveness of our documentation and whether users
-      find what they're searching for. With your consent, you're helping us to
-      make our documentation better.
-    actions:
-      - accept
-      - manage
-      - reject
   social:
     - icon: fontawesome/brands/github
       name: View on GitHub
