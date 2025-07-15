@@ -14,4 +14,4 @@
 
 A Python library for interaction with [eQ-3 Bluetooth Smart Thermostat](https://www.eq-3.de/produkte/eqiva/detail/bluetooth-smart-heizkoerperthermostat.html) devices using [bleak](https://github.com/hbldh/bleak) and `asyncio`.
 
-For more information, see the [documentation](https://eq3btsmart.eulenet.io/).
+For more information, see the [documentation](https://eulemitkeule.github.io/eq3btsmart/).
