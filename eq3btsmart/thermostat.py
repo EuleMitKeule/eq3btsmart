@@ -8,6 +8,7 @@ from typing import Awaitable, Callable, Literal, Self, Union, overload
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 from construct_typed import DataclassStruct
 
@@ -62,7 +63,7 @@ class Thermostat:
 
     def __init__(
         self,
-        mac_address: str,
+        address_or_ble_device: BLEDevice | str,
         connection_timeout: int = DEFAULT_CONNECTION_TIMEOUT,
         command_timeout: int = DEFAULT_COMMAND_TIMEOUT,
     ):
@@ -71,12 +72,10 @@ class Thermostat:
         The thermostat will be in a disconnected state after initialization.
 
         Args:
-            mac_address (str): The MAC address of the thermostat.
+            address_or_ble_device (BLEDevice | str): The MAC address of the thermostat or a BLEDevice instance.
             connection_timeout (int, optional): The connection timeout in seconds. Defaults to DEFAULT_CONNECTION_TIMEOUT.
             command_timeout (int, optional): The command timeout in seconds. Defaults to DEFAULT_COMMAND_TIMEOUT.
         """
-        self._mac_address = mac_address
-
         self._last_status: Status | None = None
         self._last_device_data: DeviceData | None = None
         self._last_schedule: Schedule | None = None
@@ -85,7 +84,7 @@ class Thermostat:
             Eq3Event, list[Union[Callable[..., None], Callable[..., Awaitable[None]]]]
         ] = defaultdict(list)
         self._conn: BleakClient = BleakClient(
-            mac_address,
+            address_or_ble_device,
             disconnected_callback=self._on_disconnected,
             timeout=DEFAULT_CONNECTION_TIMEOUT,
         )
@@ -984,7 +983,7 @@ class Thermostat:
     @overload
     def register_callback(
         self,
-        event: Union[Literal[Eq3Event.CONNECTED]],
+        event: Literal[Eq3Event.CONNECTED],
         callback: Union[
             Callable[[DeviceData, Status, Schedule], None],
             Callable[[DeviceData, Status, Schedule], Awaitable[None]],
@@ -1037,7 +1036,7 @@ class Thermostat:
     @overload
     def unregister_callback(
         self,
-        event: Union[Literal[Eq3Event.CONNECTED]],
+        event: Literal[Eq3Event.CONNECTED],
         callback: Union[
             Callable[[DeviceData, Status, Schedule], None],
             Callable[[DeviceData, Status, Schedule], Awaitable[None]],
