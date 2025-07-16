@@ -19,11 +19,6 @@ env:
 jobs:
   cache:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,9 +26,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           enable-cache: true
-          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+          cache-suffix: uv-${{ runner.os }}-3.13
 
       - name: Install dependecies
         run: uv sync --all-groups
@@ -41,11 +36,6 @@ jobs:
   ruff:
     needs: cache
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,9 +43,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           enable-cache: true
-          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+          cache-suffix: uv-${{ runner.os }}-3.13
 
       - name: Install dependecies
         run: uv sync --all-groups
@@ -67,11 +57,6 @@ jobs:
   mypy:
     needs: cache
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,9 +64,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           enable-cache: true
-          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+          cache-suffix: uv-${{ runner.os }}-3.13
 
       - name: Install dependecies
         run: uv sync --all-groups
@@ -93,11 +78,6 @@ jobs:
   codespell:
     needs: cache
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,9 +85,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           enable-cache: true
-          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+          cache-suffix: uv-${{ runner.os }}-3.13
 
       - name: Install dependecies
         run: uv sync --all-groups
@@ -119,11 +99,6 @@ jobs:
   tests:
     needs: cache
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -131,9 +106,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           enable-cache: true
-          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+          cache-suffix: uv-${{ runner.os }}-3.13
 
       - name: Install dependecies
         run: uv sync --all-groups
@@ -145,11 +120,6 @@ jobs:
   sonar:
     needs: cache
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -159,9 +129,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           enable-cache: true
-          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+          cache-suffix: uv-${{ runner.os }}-3.13
 
       - name: Install dependecies
         run: uv sync --all-groups
@@ -175,7 +145,7 @@ jobs:
           sed -i 's|/home/runner/work/eq3btsmart/eq3btsmart|/github/workspace|g' coverage.xml
 
       - name: Run SonarCloud analysis
-        uses: sonarsource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -186,5 +156,5 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=/github/workspace/eq3btsmart
             -Dsonar.tests=/github/workspace/tests
-            -Dsonar.python.version=${{ matrix.python-version }}
+            -Dsonar.python.version=3.13
             -Dsonar.text.inclusions=**/*.py
