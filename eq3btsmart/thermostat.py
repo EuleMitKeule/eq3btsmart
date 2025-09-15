@@ -1,8 +1,10 @@
 """Support for eQ-3 Bluetooth Smart thermostats."""
 
 import asyncio
-from collections import defaultdict
+from collections import defaultdict, deque
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum, auto
 from types import TracebackType
 from typing import Awaitable, Callable, Literal, Self, Union, overload
 
@@ -46,7 +48,6 @@ from eq3btsmart.const import (
     _Eq3Command,
 )
 from eq3btsmart.exceptions import (
-    Eq3AlreadyAwaitingResponseException,
     Eq3CommandException,
     Eq3ConnectionException,
     Eq3InternalException,
@@ -57,6 +58,24 @@ from eq3btsmart.exceptions import (
 from eq3btsmart.models import DeviceData, Presets, Schedule, Status
 
 __all__ = ["Thermostat"]
+
+
+class _ResponseType(Enum):
+    """Expected response types for queued commands."""
+
+    DEVICE_DATA = auto()
+    STATUS = auto()
+    SCHEDULE = auto()
+
+
+@dataclass
+class _QueuedCommand:
+    """Represents a command waiting for a response."""
+
+    command: _Eq3Struct
+    response_type: _ResponseType
+    future: asyncio.Future
+    schedule_count: int = 0
 
 
 class Thermostat:
@@ -86,10 +105,7 @@ class Thermostat:
         self._callbacks: defaultdict[
             Eq3Event, list[Union[Callable[..., None], Callable[..., Awaitable[None]]]]
         ] = defaultdict(list)
-        self._device_data_future: asyncio.Future[DeviceData] | None = None
-        self._status_future: asyncio.Future[Status] | None = None
-        self._schedule_future: asyncio.Future[Schedule] | None = None
-        self._schedule_future_counter: int = 0
+        self._command_queue: deque[_QueuedCommand] = deque()
         self._lock = asyncio.Lock()
         self._connection_timeout = connection_timeout
         self._command_timeout = command_timeout
@@ -224,14 +240,11 @@ class Thermostat:
             raise Eq3StateException("Not connected")
 
         exception = Eq3ConnectionException("Connection closed")
-        if self._device_data_future is not None and not self._device_data_future.done():
-            self._device_data_future.set_exception(exception)
 
-        if self._status_future is not None and not self._status_future.done():
-            self._status_future.set_exception(exception)
-
-        if self._schedule_future is not None and not self._schedule_future.done():
-            self._schedule_future.set_exception(exception)
+        while self._command_queue:
+            queued_command = self._command_queue.popleft()
+            if not queued_command.future.done():
+                queued_command.future.set_exception(exception)
 
         try:
             await self._conn.disconnect()
@@ -250,7 +263,6 @@ class Thermostat:
             Eq3StateException: If the thermostat is not connected.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
-            Eq3AlreadyAwaitingResponseException: If a device data command is already pending.
         """
         return await self._async_write_command_with_device_data_response(
             _IdGetCommand()
@@ -266,7 +278,6 @@ class Thermostat:
             Eq3StateException: If the thermostat is not connected.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
         """
         return await self._async_write_command_with_status_response(
             _InfoGetCommand(time=datetime.now())
@@ -282,7 +293,6 @@ class Thermostat:
             Eq3StateException: If the thermostat is not connected.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
-            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
         """
         return await self._async_write_commands_with_schedule_response(
             [_ScheduleGetCommand(day=week_day) for week_day in Eq3WeekDay]
@@ -303,7 +313,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature is invalid.
@@ -329,7 +338,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the operation mode is not supported.
@@ -370,16 +378,13 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
-        command: _ComfortSetCommand | _EcoSetCommand
-
         match preset:
             case Eq3Preset.COMFORT:
                 command = _ComfortSetCommand()
-            case Eq3Preset.ECO:
+            case _:
                 command = _EcoSetCommand()
 
         return await self._async_write_command_with_status_response(command)
@@ -397,7 +402,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
@@ -418,7 +422,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
@@ -446,7 +449,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature or date is invalid.
@@ -472,7 +474,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If any of the schedule data is invalid.
@@ -509,7 +510,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
@@ -543,7 +543,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the presets are not available or the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperatures are invalid.
@@ -572,7 +571,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the presets are not available or the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature is invalid.
@@ -596,7 +594,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the presets are not available or the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature is invalid.
@@ -626,7 +623,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature is invalid.
@@ -654,7 +650,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the presets are not available or the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature or duration is invalid.
@@ -685,7 +680,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the presets are not available or the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature is invalid.
@@ -712,7 +706,6 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the presets are not available or the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the duration is invalid.
@@ -720,8 +713,6 @@ class Thermostat:
         return await self.async_configure_window_open(
             self.presets.window_open_temperature, duration
         )
-
-    ### Internal ###
 
     async def __aenter__(self) -> Self:
         """Async context manager enter.
@@ -769,27 +760,25 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a device data command is already pending.
             Eq3TimeoutException: If the command times out.
             Eq3CommandException: If an error occurs while sending the command.
         """
-        if self._device_data_future is not None:
-            raise Eq3AlreadyAwaitingResponseException(
-                "Already awaiting a device data command response"
-            )
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
 
-        self._device_data_future = asyncio.Future()
+        queued_command = _QueuedCommand(
+            command=command, response_type=_ResponseType.DEVICE_DATA, future=future
+        )
 
+        self._command_queue.append(queued_command)
         await self._async_write_command(command)
 
         try:
-            device_data = await asyncio.wait_for(
-                self._device_data_future, self._command_timeout
-            )
+            device_data = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
+            if queued_command in self._command_queue:
+                self._command_queue.remove(queued_command)
             raise Eq3TimeoutException("Timeout during device data command") from ex
-        finally:
-            self._device_data_future = None
 
         return device_data
 
@@ -806,25 +795,25 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a status command is already pending.
             Eq3TimeoutException: If the command times out.
             Eq3CommandException: If an error occurs while sending the command.
         """
-        if self._status_future is not None:
-            raise Eq3AlreadyAwaitingResponseException(
-                "Already awaiting a status command response"
-            )
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
 
-        self._status_future = asyncio.Future()
+        queued_command = _QueuedCommand(
+            command=command, response_type=_ResponseType.STATUS, future=future
+        )
 
+        self._command_queue.append(queued_command)
         await self._async_write_command(command)
 
         try:
-            status = await asyncio.wait_for(self._status_future, self._command_timeout)
+            status = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
+            if queued_command in self._command_queue:
+                self._command_queue.remove(queued_command)
             raise Eq3TimeoutException("Timeout during status command") from ex
-        finally:
-            self._status_future = None
 
         return status
 
@@ -841,29 +830,30 @@ class Thermostat:
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
-            Eq3AlreadyAwaitingResponseException: If a schedule command is already pending.
             Eq3TimeoutException: If the command times out.
             Eq3CommandException: If an error occurs while sending the command.
         """
-        if self._schedule_future is not None:
-            raise Eq3AlreadyAwaitingResponseException(
-                "Already awaiting a schedule command response"
-            )
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
 
-        self._schedule_future = asyncio.Future()
-        self._schedule_future_counter = len(commands)
+        queued_command = _QueuedCommand(
+            command=commands[0],
+            response_type=_ResponseType.SCHEDULE,
+            future=future,
+            schedule_count=len(commands),
+        )
+
+        self._command_queue.append(queued_command)
 
         for command in commands:
             await self._async_write_command(command)
 
         try:
-            schedule = await asyncio.wait_for(
-                self._schedule_future, self._command_timeout
-            )
+            schedule = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
+            if queued_command in self._command_queue:
+                self._command_queue.remove(queued_command)
             raise Eq3TimeoutException("Timeout during schedule command") from ex
-        finally:
-            self._schedule_future = None
 
         return schedule
 
@@ -931,8 +921,14 @@ class Thermostat:
         """
         self._last_device_data = device_data
 
-        if self._device_data_future is not None:
-            self._device_data_future.set_result(device_data)
+        for i, queued_command in enumerate(self._command_queue):
+            if (
+                queued_command.response_type == _ResponseType.DEVICE_DATA
+                and not queued_command.future.done()
+            ):
+                self._command_queue.remove(queued_command)
+                queued_command.future.set_result(device_data)
+                break
 
         await self._trigger_event(
             Eq3Event.DEVICE_DATA_RECEIVED, device_data=device_data
@@ -948,8 +944,14 @@ class Thermostat:
         """
         self._last_status = status
 
-        if self._status_future is not None:
-            self._status_future.set_result(status)
+        for i, queued_command in enumerate(self._command_queue):
+            if (
+                queued_command.response_type == _ResponseType.STATUS
+                and not queued_command.future.done()
+            ):
+                self._command_queue.remove(queued_command)
+                queued_command.future.set_result(status)
+                break
 
         await self._trigger_event(Eq3Event.STATUS_RECEIVED, status=status)
 
@@ -966,17 +968,21 @@ class Thermostat:
 
         self._last_schedule.merge(schedule)
 
-        if self._schedule_future is not None:
-            self._schedule_future_counter -= 1
+        for i, queued_command in enumerate(self._command_queue):
+            if (
+                queued_command.response_type == _ResponseType.SCHEDULE
+                and not queued_command.future.done()
+            ):
+                queued_command.schedule_count -= 1
 
-            if self._schedule_future_counter == 0:
-                self._schedule_future.set_result(self._last_schedule)
+                if queued_command.schedule_count == 0:
+                    self._command_queue.remove(queued_command)
+                    queued_command.future.set_result(self._last_schedule)
+                break
 
         await self._trigger_event(
             Eq3Event.SCHEDULE_RECEIVED, schedule=self._last_schedule
         )
-
-    ### Callbacks ###
 
     @overload
     def register_callback(
@@ -1170,14 +1176,15 @@ class Thermostat:
                         "status must not be None for STATUS_RECEIVED event"
                     )
                 args = (status,)
-            case Eq3Event.SCHEDULE_RECEIVED:
+            case _:
                 if schedule is None:
                     raise Eq3InternalException(
                         "schedule must not be None for SCHEDULE_RECEIVED event"
                     )
                 args = (schedule,)
 
-        await asyncio.gather(*[callback(*args) for callback in async_callbacks])
+        if async_callbacks:
+            await asyncio.gather(*[callback(*args) for callback in async_callbacks])
 
         for callback in sync_callbacks:
             callback(*args)
