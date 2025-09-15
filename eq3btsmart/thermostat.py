@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, auto
 from types import TracebackType
-from typing import Awaitable, Callable, Literal, Self, Union, overload
+from typing import Awaitable, Callable, Literal, Self, Union, cast, overload
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -74,7 +74,7 @@ class _QueuedCommand:
 
     command: _Eq3Struct
     response_type: _ResponseType
-    future: asyncio.Future
+    future: asyncio.Future[object]
     schedule_count: int = 0
 
 
@@ -381,6 +381,7 @@ class Thermostat:
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
+        command: _Eq3Struct
         match preset:
             case Eq3Preset.COMFORT:
                 command = _ComfortSetCommand()
@@ -780,7 +781,7 @@ class Thermostat:
                 self._command_queue.remove(queued_command)
             raise Eq3TimeoutException("Timeout during device data command") from ex
 
-        return device_data
+        return cast(DeviceData, device_data)
 
     async def _async_write_command_with_status_response(
         self, command: _Eq3Struct
@@ -815,7 +816,7 @@ class Thermostat:
                 self._command_queue.remove(queued_command)
             raise Eq3TimeoutException("Timeout during status command") from ex
 
-        return status
+        return cast(Status, status)
 
     async def _async_write_commands_with_schedule_response(
         self, commands: list[_Eq3Struct]
@@ -855,7 +856,7 @@ class Thermostat:
                 self._command_queue.remove(queued_command)
             raise Eq3TimeoutException("Timeout during schedule command") from ex
 
-        return schedule
+        return cast(Schedule, schedule)
 
     async def _async_write_command(self, command: _Eq3Struct) -> None:
         """Write a command to the thermostat.
