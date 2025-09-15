@@ -10,6 +10,7 @@ from unittest.mock import (
 )
 
 import pytest
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 from eq3btsmart._adapters import _Eq3Temperature
@@ -61,9 +62,9 @@ from eq3btsmart.thermostat import Thermostat
 @pytest.mark.asyncio
 async def test_connect(thermostat: Thermostat) -> None:
     with (
-        patch.object(
-            thermostat._conn, "connect", new_callable=AsyncMock
-        ) as mock_connect,
+        patch(
+            "eq3btsmart.thermostat.establish_connection", new_callable=AsyncMock
+        ) as mock_establish_connection,
         patch.object(
             thermostat._conn, "start_notify", new_callable=AsyncMock
         ) as mock_start_notify,
@@ -80,9 +81,11 @@ async def test_connect(thermostat: Thermostat) -> None:
             thermostat, "_trigger_event", new_callable=AsyncMock
         ) as mock_trigger_event,
     ):
+        mock_establish_connection.return_value = thermostat._conn
+
         await thermostat.async_connect()
 
-        mock_connect.assert_called_once()
+        mock_establish_connection.assert_called_once()
         mock_start_notify.assert_called_once()
         mock_get_status.assert_called_once()
         mock_get_device_data.assert_called_once()
@@ -108,7 +111,7 @@ async def test_connect_already_connected(thermostat: Thermostat) -> None:
 
 @pytest.mark.asyncio
 async def test_connect_bleak_error(thermostat: Thermostat) -> None:
-    with patch.object(thermostat._conn, "connect", side_effect=BleakError):
+    with patch("eq3btsmart.thermostat.establish_connection", side_effect=BleakError):
         with pytest.raises(
             Eq3ConnectionException, match="Could not connect to the device"
         ):
@@ -117,7 +120,7 @@ async def test_connect_bleak_error(thermostat: Thermostat) -> None:
 
 @pytest.mark.asyncio
 async def test_connect_timeout_error(thermostat: Thermostat) -> None:
-    with patch.object(thermostat._conn, "connect", side_effect=TimeoutError):
+    with patch("eq3btsmart.thermostat.establish_connection", side_effect=TimeoutError):
         with pytest.raises(Eq3TimeoutException, match="Timeout during connection"):
             await thermostat.async_connect()
 
@@ -791,7 +794,9 @@ async def test_aenter_aexit() -> None:
             Thermostat, "async_disconnect", new_callable=AsyncMock
         ) as mock_disconnect,
     ):
-        async with Thermostat("00:11:22:33:44:55"):
+        async with Thermostat(
+            BLEDevice("00:11:22:33:44:55", name="Test Device", details={})
+        ):
             mock_connect.assert_called_once()
 
         mock_disconnect.assert_called_once()
