@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-import mkdocs_gen_files  # type: ignore[import]
+import mkdocs_gen_files
 
 root = Path(__file__).parent.parent
 src = root / "eq3btsmart"
