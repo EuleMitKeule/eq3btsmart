@@ -62,8 +62,6 @@ __all__ = ["Thermostat"]
 class Thermostat:
     """Representation of an eQ-3 Bluetooth Smart thermostat."""
 
-    _conn: BleakClient | None = None
-
     def __init__(
         self,
         device: BLEDevice,
@@ -83,6 +81,7 @@ class Thermostat:
         self._last_device_data: DeviceData | None = None
         self._last_schedule: Schedule | None = None
 
+        self._conn: BleakClient | None = None
         self._device = device
         self._callbacks: defaultdict[
             Eq3Event, list[Union[Callable[..., None], Callable[..., Awaitable[None]]]]
