@@ -24,21 +24,11 @@ classifiers = [
 description = "Python library to interact with eQ-3 Bluetooth Smart thermostats"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "bleak>=0.22.3",
-    "construct-typing>=0.6.2",
-]
+dependencies = ["bleak", "bleak-retry-connector", "construct-typing"]
 version = "0.0.0"
 
 [dependency-groups]
-dev = [
-    "codespell",
-    "mypy",
-    "pytest",
-    "pytest-asyncio",
-    "pytest-cov",
-    "ruff",
-]
+dev = ["codespell", "mypy", "pytest", "pytest-asyncio", "pytest-cov", "ruff"]
 docs = [
     "mkdocs-gen-files",
     "mkdocs-literate-nav",

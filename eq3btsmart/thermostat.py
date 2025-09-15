@@ -10,6 +10,7 @@ from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
+from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from construct_typed import DataclassStruct
 
 from eq3btsmart._adapters import _Eq3Temperature
@@ -61,9 +62,11 @@ __all__ = ["Thermostat"]
 class Thermostat:
     """Representation of an eQ-3 Bluetooth Smart thermostat."""
 
+    _conn: BleakClient | None = None
+
     def __init__(
         self,
-        address_or_ble_device: BLEDevice | str,
+        device: BLEDevice,
         connection_timeout: int = DEFAULT_CONNECTION_TIMEOUT,
         command_timeout: int = DEFAULT_COMMAND_TIMEOUT,
     ):
@@ -72,7 +75,7 @@ class Thermostat:
         The thermostat will be in a disconnected state after initialization.
 
         Args:
-            address_or_ble_device (BLEDevice | str): The MAC address of the thermostat or a BLEDevice instance.
+            device (BLEDevice): The BLEDevice instance.
             connection_timeout (int, optional): The connection timeout in seconds. Defaults to DEFAULT_CONNECTION_TIMEOUT.
             command_timeout (int, optional): The command timeout in seconds. Defaults to DEFAULT_COMMAND_TIMEOUT.
         """
@@ -80,14 +83,10 @@ class Thermostat:
         self._last_device_data: DeviceData | None = None
         self._last_schedule: Schedule | None = None
 
+        self._device = device
         self._callbacks: defaultdict[
             Eq3Event, list[Union[Callable[..., None], Callable[..., Awaitable[None]]]]
         ] = defaultdict(list)
-        self._conn: BleakClient = BleakClient(
-            address_or_ble_device,
-            disconnected_callback=self._on_disconnected,
-            timeout=DEFAULT_CONNECTION_TIMEOUT,
-        )
         self._device_data_future: asyncio.Future[DeviceData] | None = None
         self._status_future: asyncio.Future[Status] | None = None
         self._schedule_future: asyncio.Future[Schedule] | None = None
@@ -103,7 +102,7 @@ class Thermostat:
         Returns:
             bool: True if connected, False otherwise.
         """
-        return self._conn.is_connected
+        return conn.is_connected if (conn := self._conn) else False
 
     @property
     def device_data(self) -> DeviceData:
@@ -179,7 +178,14 @@ class Thermostat:
             raise Eq3StateException("Already connected")
 
         try:
-            await asyncio.wait_for(self._conn.connect(), self._connection_timeout)
+            self._conn = await establish_connection(
+                BleakClientWithServiceCache,
+                self._device,
+                self._device.name or "",
+                disconnected_callback=self._on_disconnected,
+                max_attempts=3,
+                timeout=self._connection_timeout,
+            )
             await self._conn.start_notify(
                 _Eq3Characteristic.NOTIFY, self._on_message_received
             )
@@ -215,7 +221,7 @@ class Thermostat:
             Eq3ConnectionException: If the disconnection fails.
             Eq3TimeoutException: If the disconnection times out.
         """
-        if not self.is_connected:
+        if not self.is_connected or self._conn is None:
             raise Eq3StateException("Not connected")
 
         exception = Eq3ConnectionException("Connection closed")
@@ -873,7 +879,7 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
         """
-        if not self.is_connected:
+        if not self.is_connected or self._conn is None:
             raise Eq3StateException("Not connected")
 
         data = command.to_bytes()
