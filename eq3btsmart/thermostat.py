@@ -870,6 +870,9 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
         """
         if not self.is_connected or self._conn is None:
+            await self.async_connect()
+
+        if not self.is_connected or self._conn is None:
             raise Eq3StateException("Not connected")
 
         data = command.to_bytes()
