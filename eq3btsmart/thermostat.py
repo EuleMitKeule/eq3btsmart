@@ -179,42 +179,41 @@ class Thermostat:
             Eq3TimeoutException: If the connection times out.
             Eq3CommandException: If an error occurs while sending a command.
         """
-        async with self._connection_lock:
-            if self.is_connected:
-                return
+        if self.is_connected:
+            return
 
-            try:
-                self._conn = await establish_connection(
-                    BleakClientWithServiceCache,
-                    self._device,
-                    self._device.name or "",
-                    disconnected_callback=self._on_disconnected,
-                    max_attempts=3,
-                    timeout=self._connection_timeout,
-                )
-                await self._conn.start_notify(
-                    _Eq3Characteristic.NOTIFY, self._on_message_received
-                )
-                (
-                    self._last_device_data,
-                    self._last_status,
-                    self._last_schedule,
-                ) = await asyncio.gather(
-                    self._async_get_device_data_internal(),
-                    self._async_get_status_internal(),
-                    self._async_get_schedule_internal(),
-                )
-            except BleakError as ex:
-                raise Eq3ConnectionException("Could not connect to the device") from ex
-            except TimeoutError as ex:
-                raise Eq3TimeoutException("Timeout during connection") from ex
-
-            await self._trigger_event(
-                Eq3Event.CONNECTED,
-                device_data=self.device_data,
-                status=self.status,
-                schedule=self.schedule,
+        try:
+            self._conn = await establish_connection(
+                BleakClientWithServiceCache,
+                self._device,
+                self._device.name or "",
+                disconnected_callback=self._on_disconnected,
+                max_attempts=3,
+                timeout=self._connection_timeout,
             )
+            await self._conn.start_notify(
+                _Eq3Characteristic.NOTIFY, self._on_message_received
+            )
+            (
+                self._last_device_data,
+                self._last_status,
+                self._last_schedule,
+            ) = await asyncio.gather(
+                self._async_get_device_data_internal(),
+                self._async_get_status_internal(),
+                self._async_get_schedule_internal(),
+            )
+        except BleakError as ex:
+            raise Eq3ConnectionException("Could not connect to the device") from ex
+        except TimeoutError as ex:
+            raise Eq3TimeoutException("Timeout during connection") from ex
+
+        await self._trigger_event(
+            Eq3Event.CONNECTED,
+            device_data=self.device_data,
+            status=self.status,
+            schedule=self.schedule,
+        )
 
     async def async_disconnect(self) -> None:
         """Disconnect from the thermostat.
@@ -830,9 +829,9 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
         """
-        # Check connection and reconnect if needed, but don't hold the lock during command sending
         if use_connection_lock and (not self.is_connected or self._conn is None):
-            await self.async_connect()
+            async with self._connection_lock:
+                await self.async_connect()
 
         if not self.is_connected or self._conn is None:
             raise Eq3StateException("Not connected")
