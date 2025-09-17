@@ -305,7 +305,9 @@ class Thermostat:
 
     async def _async_get_schedule_internal(self) -> Schedule:
         """Internal method to get schedule without connection lock (used during connect)."""
-        commands: list[_Eq3Struct] = [_ScheduleGetCommand(day=week_day) for week_day in Eq3WeekDay]
+        commands: list[_Eq3Struct] = [
+            _ScheduleGetCommand(day=week_day) for week_day in Eq3WeekDay
+        ]
         response = await self._async_write_commands_with_response(
             commands, "schedule", use_connection_lock=False
         )
@@ -315,21 +317,30 @@ class Thermostat:
         self, command: _Eq3Struct, operation_name: str, use_connection_lock: bool = True
     ) -> object:
         """Write a single command and wait for response with unified error handling."""
-        future = await self._async_queue_and_send_command(command, use_connection_lock=use_connection_lock)
+        future = await self._async_queue_and_send_command(
+            command, use_connection_lock=use_connection_lock
+        )
 
         try:
             response = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
-            raise Eq3TimeoutException(f"Timeout during {operation_name} command") from ex
+            raise Eq3TimeoutException(
+                f"Timeout during {operation_name} command"
+            ) from ex
 
         return response
 
     async def _async_write_commands_with_response(
-        self, commands: list[_Eq3Struct], operation_name: str, use_connection_lock: bool = True
+        self,
+        commands: list[_Eq3Struct],
+        operation_name: str,
+        use_connection_lock: bool = True,
     ) -> object:
         """Write multiple commands and wait for all responses with unified error handling."""
         future = await self._async_queue_and_send_command(
-            commands[0], schedule_count=len(commands), use_connection_lock=use_connection_lock
+            commands[0],
+            schedule_count=len(commands),
+            use_connection_lock=use_connection_lock,
         )
 
         # Send remaining commands without queueing
@@ -339,7 +350,9 @@ class Thermostat:
         try:
             response = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
-            raise Eq3TimeoutException(f"Timeout during {operation_name} command") from ex
+            raise Eq3TimeoutException(
+                f"Timeout during {operation_name} command"
+            ) from ex
 
         return response
 
@@ -794,7 +807,10 @@ class Thermostat:
         await self.async_disconnect()
 
     async def _async_queue_and_send_command(
-        self, command: _Eq3Struct, schedule_count: int = 0, use_connection_lock: bool = True
+        self,
+        command: _Eq3Struct,
+        schedule_count: int = 0,
+        use_connection_lock: bool = True,
     ) -> asyncio.Future[object]:
         """Atomically queue a command and send it to the thermostat.
 
