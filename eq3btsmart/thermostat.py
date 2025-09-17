@@ -4,7 +4,6 @@ import asyncio
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import Enum, auto
 from types import TracebackType
 from typing import Awaitable, Callable, Literal, Self, Union, cast, overload
 
@@ -60,20 +59,10 @@ from eq3btsmart.models import DeviceData, Presets, Schedule, Status
 __all__ = ["Thermostat"]
 
 
-class _ResponseType(Enum):
-    """Expected response types for queued commands."""
-
-    DEVICE_DATA = auto()
-    STATUS = auto()
-    SCHEDULE = auto()
-
-
 @dataclass
 class _QueuedCommand:
     """Represents a command waiting for a response."""
 
-    command: _Eq3Struct
-    response_type: _ResponseType
     future: asyncio.Future[object]
     schedule_count: int = 0
 
@@ -748,6 +737,61 @@ class Thermostat:
         """
         await self.async_disconnect()
 
+    async def _async_queue_and_send_command(
+        self, command: _Eq3Struct, schedule_count: int = 0
+    ) -> asyncio.Future[object]:
+        """Atomically queue a command and send it to the thermostat.
+
+        This method ensures that commands are queued immediately before sending,
+        preventing queue corruption from auto-reconnect or other issues.
+
+        Args:
+            command (_Eq3Struct): The command to send.
+            schedule_count (int): Number of schedule responses expected (for schedule commands only).
+
+        Returns:
+            asyncio.Future[object]: Future that will be resolved when the response is received.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3CommandException: If an error occurs while sending the command.
+            Eq3TimeoutException: If the command times out.
+        """
+        if not self.is_connected or self._conn is None:
+            await self.async_connect()
+
+        if not self.is_connected or self._conn is None:
+            raise Eq3StateException("Not connected")
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+
+        queued_command = _QueuedCommand(
+            future=future,
+            schedule_count=schedule_count,
+        )
+
+        data = command.to_bytes()
+
+        async with self._lock:
+            try:
+                self._command_queue.append(queued_command)
+
+                await asyncio.wait_for(
+                    self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
+                    self._command_timeout,
+                )
+            except (BleakError, TimeoutError) as ex:
+                if queued_command in self._command_queue:
+                    self._command_queue.remove(queued_command)
+
+                if isinstance(ex, BleakError):
+                    raise Eq3CommandException("Error during write") from ex
+                else:
+                    raise Eq3TimeoutException("Timeout during write") from ex
+
+        return future
+
     async def _async_write_command_with_device_data_response(
         self, command: _Eq3Struct
     ) -> DeviceData:
@@ -764,21 +808,12 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3CommandException: If an error occurs while sending the command.
         """
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
-
-        queued_command = _QueuedCommand(
-            command=command, response_type=_ResponseType.DEVICE_DATA, future=future
-        )
-
-        self._command_queue.append(queued_command)
-        await self._async_write_command(command)
+        future = await self._async_queue_and_send_command(command)
 
         try:
             device_data = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
-            if queued_command in self._command_queue:
-                self._command_queue.remove(queued_command)
+            # Future cleanup is handled in the message handlers
             raise Eq3TimeoutException("Timeout during device data command") from ex
 
         return cast(DeviceData, device_data)
@@ -799,21 +834,12 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3CommandException: If an error occurs while sending the command.
         """
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
-
-        queued_command = _QueuedCommand(
-            command=command, response_type=_ResponseType.STATUS, future=future
-        )
-
-        self._command_queue.append(queued_command)
-        await self._async_write_command(command)
+        future = await self._async_queue_and_send_command(command)
 
         try:
             status = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
-            if queued_command in self._command_queue:
-                self._command_queue.remove(queued_command)
+            # Future cleanup is handled in the message handlers
             raise Eq3TimeoutException("Timeout during status command") from ex
 
         return cast(Status, status)
@@ -834,44 +860,35 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3CommandException: If an error occurs while sending the command.
         """
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
-
-        queued_command = _QueuedCommand(
-            command=commands[0],
-            response_type=_ResponseType.SCHEDULE,
-            future=future,
-            schedule_count=len(commands),
+        # For schedule commands, we need to send multiple commands but only queue once
+        # The first command will queue with schedule_count set to the total number of commands
+        future = await self._async_queue_and_send_command(
+            commands[0], schedule_count=len(commands)
         )
 
-        self._command_queue.append(queued_command)
-
-        for command in commands:
-            await self._async_write_command(command)
+        # Send remaining commands without queueing
+        for command in commands[1:]:
+            await self._async_send_command_without_queue(command)
 
         try:
             schedule = await asyncio.wait_for(future, self._command_timeout)
         except TimeoutError as ex:
-            if queued_command in self._command_queue:
-                self._command_queue.remove(queued_command)
+            # Future cleanup is handled in the message handlers
             raise Eq3TimeoutException("Timeout during schedule command") from ex
 
         return cast(Schedule, schedule)
 
-    async def _async_write_command(self, command: _Eq3Struct) -> None:
-        """Write a command to the thermostat.
+    async def _async_send_command_without_queue(self, command: _Eq3Struct) -> None:
+        """Send a command without adding to queue (for use with multi-command operations).
 
         Args:
-            command (_Eq3Struct): The command to write.
+            command (_Eq3Struct): The command to send.
 
         Raises:
             Eq3StateException: If the thermostat is not connected.
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
         """
-        if not self.is_connected or self._conn is None:
-            await self.async_connect()
-
         if not self.is_connected or self._conn is None:
             raise Eq3StateException("Not connected")
 
@@ -925,14 +942,11 @@ class Thermostat:
         """
         self._last_device_data = device_data
 
-        for i, queued_command in enumerate(self._command_queue):
-            if (
-                queued_command.response_type == _ResponseType.DEVICE_DATA
-                and not queued_command.future.done()
-            ):
-                self._command_queue.remove(queued_command)
+        # Since responses come back in order, take the first queued command
+        if self._command_queue:
+            queued_command = self._command_queue.popleft()
+            if not queued_command.future.done():
                 queued_command.future.set_result(device_data)
-                break
 
         await self._trigger_event(
             Eq3Event.DEVICE_DATA_RECEIVED, device_data=device_data
@@ -948,14 +962,11 @@ class Thermostat:
         """
         self._last_status = status
 
-        for i, queued_command in enumerate(self._command_queue):
-            if (
-                queued_command.response_type == _ResponseType.STATUS
-                and not queued_command.future.done()
-            ):
-                self._command_queue.remove(queued_command)
+        # Since responses come back in order, take the first queued command
+        if self._command_queue:
+            queued_command = self._command_queue.popleft()
+            if not queued_command.future.done():
                 queued_command.future.set_result(status)
-                break
 
         await self._trigger_event(Eq3Event.STATUS_RECEIVED, status=status)
 
@@ -972,17 +983,16 @@ class Thermostat:
 
         self._last_schedule.merge(schedule)
 
-        for i, queued_command in enumerate(self._command_queue):
-            if (
-                queued_command.response_type == _ResponseType.SCHEDULE
-                and not queued_command.future.done()
-            ):
+        # For schedule commands, we need to handle multiple responses
+        if self._command_queue:
+            queued_command = self._command_queue[0]  # Peek at first command
+            if not queued_command.future.done():
                 queued_command.schedule_count -= 1
 
                 if queued_command.schedule_count == 0:
-                    self._command_queue.remove(queued_command)
+                    # All schedule responses received, complete the future
+                    self._command_queue.popleft()
                     queued_command.future.set_result(self._last_schedule)
-                break
 
         await self._trigger_event(
             Eq3Event.SCHEDULE_RECEIVED, schedule=self._last_schedule
