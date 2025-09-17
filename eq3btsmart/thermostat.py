@@ -830,16 +830,12 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
         """
-        if use_connection_lock:
-            async with self._connection_lock:
-                if not self.is_connected or self._conn is None:
-                    await self.async_connect()
+        # Check connection and reconnect if needed, but don't hold the lock during command sending
+        if use_connection_lock and (not self.is_connected or self._conn is None):
+            await self.async_connect()
 
-                if not self.is_connected or self._conn is None:
-                    raise Eq3StateException("Not connected")
-        else:
-            if self._conn is None:
-                raise Eq3StateException("Not connected")
+        if not self.is_connected or self._conn is None:
+            raise Eq3StateException("Not connected")
 
         loop = asyncio.get_running_loop()
         future = loop.create_future()
