@@ -762,7 +762,6 @@ class Thermostat:
             response = self._future.result()
             return response
         except TimeoutError as ex:
-            self._future = None
             raise Eq3TimeoutException("Timeout during command") from ex
         finally:
             self._future = None
@@ -825,16 +824,15 @@ class Thermostat:
 
         data = command.to_bytes()
 
-        async with self._lock:
-            try:
-                await asyncio.wait_for(
-                    self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
-                    self._command_timeout,
-                )
-            except BleakError as ex:
-                raise Eq3CommandException("Error during write") from ex
-            except TimeoutError as ex:
-                raise Eq3TimeoutException("Timeout during write") from ex
+        try:
+            await asyncio.wait_for(
+                self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
+                self._command_timeout,
+            )
+        except BleakError as ex:
+            raise Eq3CommandException("Error during write") from ex
+        except TimeoutError as ex:
+            raise Eq3TimeoutException("Timeout during write") from ex
 
     def _on_disconnected(self, _: BleakClient) -> None:
         """Handle disconnection from the thermostat."""
