@@ -324,11 +324,21 @@ class Thermostat:
             Eq3InvalidDataException: If the operation mode is not supported.
         """
         command: _ModeSetCommand
-
         match operation_mode:
             case Eq3OperationMode.AUTO:
                 command = _ModeSetCommand(mode=Eq3OperationMode.AUTO)
             case Eq3OperationMode.MANUAL:
+                if self.status.operation_mode != Eq3OperationMode.MANUAL:
+                    # Workaround for a bug in the thermostat firmware where switching directly to MANUAL mode fails.
+                    # The workaround sets the temperature to half a degree below or above the current target temperature
+                    # before setting the mode to MANUAL with the current target temperature.
+                    if self.status.target_temperature > EQ3_OFF_TEMP:
+                        temperature = self.status.target_temperature - 0.5
+                    else:
+                        temperature = self.status.target_temperature + 0.5
+                    await self._async_write_command(
+                        _TemperatureSetCommand(temperature=temperature)
+                    )
                 command = _ModeSetCommand(
                     mode=Eq3OperationMode.MANUAL
                     | _Eq3Temperature.encode(self.status.target_temperature)
