@@ -55,7 +55,7 @@ from eq3btsmart.exceptions import (
     Eq3TimeoutException,
 )
 from eq3btsmart.models import DeviceData, Schedule, ScheduleDay, ScheduleHour, Status
-from eq3btsmart.thermostat import Thermostat, _QueuedCommand, _ResponseType
+from eq3btsmart.thermostat import Thermostat
 
 
 @pytest.mark.asyncio
@@ -180,50 +180,6 @@ async def test_disconnect_timeout_error(thermostat: Thermostat) -> None:
 
         with pytest.raises(Eq3TimeoutException, match="Timeout during disconnection"):
             await thermostat.async_disconnect()
-
-
-@pytest.mark.asyncio
-async def test_disconnect_with_pending_futures(thermostat: Thermostat) -> None:
-    from eq3btsmart.thermostat import _QueuedCommand, _ResponseType
-
-    device_future: asyncio.Future[object] = asyncio.Future()
-    status_future: asyncio.Future[object] = asyncio.Future()
-    schedule_future: asyncio.Future[object] = asyncio.Future()
-
-    device_command = _QueuedCommand(
-        command=MagicMock(),
-        response_type=_ResponseType.DEVICE_DATA,
-        future=device_future,
-    )
-    status_command = _QueuedCommand(
-        command=MagicMock(), response_type=_ResponseType.STATUS, future=status_future
-    )
-    schedule_command = _QueuedCommand(
-        command=MagicMock(),
-        response_type=_ResponseType.SCHEDULE,
-        future=schedule_future,
-    )
-
-    thermostat._command_queue.extend([device_command, status_command, schedule_command])
-
-    with (
-        patch.object(thermostat._conn, "disconnect", new_callable=AsyncMock),
-        patch.object(
-            Thermostat, "is_connected", new_callable=PropertyMock
-        ) as mock_is_connected,
-    ):
-        mock_is_connected.return_value = True
-
-        await thermostat.async_disconnect()
-
-        assert device_future.done()
-        assert status_future.done()
-        assert schedule_future.done()
-        assert isinstance(device_future.exception(), Eq3ConnectionException)
-        assert isinstance(status_future.exception(), Eq3ConnectionException)
-        assert isinstance(schedule_future.exception(), Eq3ConnectionException)
-
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -832,13 +788,10 @@ async def test_write_command_with_device_data_response(thermostat: Thermostat) -
 
         asyncio.create_task(simulate_response())
 
-        result = await thermostat._async_write_command_with_device_data_response(
-            mock_command
-        )
+        result = await thermostat._async_write_command(mock_command)
 
         mock_write_command.assert_called_once_with(mock_command)
         assert result == mock_device_data
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -860,19 +813,14 @@ async def test_write_command_with_device_data_response_concurrent_requests(
             await thermostat._on_device_data_received(mock_device_data2)
 
         asyncio.create_task(simulate_responses())
-        task1 = asyncio.create_task(
-            thermostat._async_write_command_with_device_data_response(mock_command1)
-        )
-        task2 = asyncio.create_task(
-            thermostat._async_write_command_with_device_data_response(mock_command2)
-        )
+        task1 = asyncio.create_task(thermostat._async_write_command(mock_command1))
+        task2 = asyncio.create_task(thermostat._async_write_command(mock_command2))
 
         result1 = await task1
         result2 = await task2
 
         assert result1 == mock_device_data1
         assert result2 == mock_device_data2
-        assert len(thermostat._command_queue) == 0
         assert mock_write_command.call_count == 2
 
 
@@ -890,12 +838,9 @@ async def test_write_command_with_device_data_response_timeout(
         with pytest.raises(
             Eq3TimeoutException, match="Timeout during device data command"
         ):
-            await thermostat._async_write_command_with_device_data_response(
-                mock_command
-            )
+            await thermostat._async_write_command(mock_command)
 
         mock_write_command.assert_called_once_with(mock_command)
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -913,13 +858,10 @@ async def test_write_command_with_status_response(thermostat: Thermostat) -> Non
 
         asyncio.create_task(simulate_response())
 
-        result = await thermostat._async_write_command_with_status_response(
-            mock_command
-        )
+        result = await thermostat._async_write_command(mock_command)
 
         mock_write_command.assert_called_once_with(mock_command)
         assert result == mock_status
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -941,19 +883,14 @@ async def test_write_command_with_status_response_concurrent_requests(
             await thermostat._on_status_received(mock_status2)
 
         asyncio.create_task(simulate_responses())
-        task1 = asyncio.create_task(
-            thermostat._async_write_command_with_status_response(mock_command1)
-        )
-        task2 = asyncio.create_task(
-            thermostat._async_write_command_with_status_response(mock_command2)
-        )
+        task1 = asyncio.create_task(thermostat._async_write_command(mock_command1))
+        task2 = asyncio.create_task(thermostat._async_write_command(mock_command2))
 
         result1 = await task1
         result2 = await task2
 
         assert result1 == mock_status1
         assert result2 == mock_status2
-        assert len(thermostat._command_queue) == 0
         assert mock_write_command.call_count == 2
 
 
@@ -969,10 +906,9 @@ async def test_write_command_with_status_response_timeout(
         thermostat._command_timeout = 0
 
         with pytest.raises(Eq3TimeoutException, match="Timeout during status command"):
-            await thermostat._async_write_command_with_status_response(mock_command)
+            await thermostat._async_write_command(mock_command)
 
         mock_write_command.assert_called_once_with(mock_command)
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -992,15 +928,12 @@ async def test_write_commands_with_schedule_response(thermostat: Thermostat) -> 
         # Start the response simulation
         asyncio.create_task(simulate_responses())
 
-        result = await thermostat._async_write_commands_with_schedule_response(
-            mock_commands
-        )
+        result = await thermostat._async_write_commands(mock_commands)
 
         mock_write_command.assert_has_calls(
             [call(command) for command in mock_commands]
         )
         assert result == mock_schedule
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -1024,18 +957,13 @@ async def test_write_commands_with_schedule_response_concurrent_requests(
                 await thermostat._on_schedule_received(mock_schedule1)
 
         asyncio.create_task(simulate_responses())
-        task1 = asyncio.create_task(
-            thermostat._async_write_commands_with_schedule_response(mock_commands1)
-        )
-        task2 = asyncio.create_task(
-            thermostat._async_write_commands_with_schedule_response(mock_commands2)
-        )
+        task1 = asyncio.create_task(thermostat._async_write_commands(mock_commands1))
+        task2 = asyncio.create_task(thermostat._async_write_commands(mock_commands2))
 
         result1 = await task1
         result2 = await task2
 
         assert result1 == result2
-        assert len(thermostat._command_queue) == 0
         assert mock_write_command.call_count == 5
 
 
@@ -1053,12 +981,11 @@ async def test_write_commands_with_schedule_response_timeout(
         with pytest.raises(
             Eq3TimeoutException, match="Timeout during schedule command"
         ):
-            await thermostat._async_write_commands_with_schedule_response(mock_commands)
+            await thermostat._async_write_commands(mock_commands)
 
         mock_write_command.assert_has_calls(
             [call(command) for command in mock_commands]
         )
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -1238,31 +1165,6 @@ async def test_on_device_data_received(thermostat: Thermostat) -> None:
 
 
 @pytest.mark.asyncio
-async def test_on_device_data_received_with_future(thermostat: Thermostat) -> None:
-    device_data = MagicMock()
-
-    from eq3btsmart.thermostat import _QueuedCommand, _ResponseType
-
-    future: asyncio.Future[object] = asyncio.Future()
-    queued_command = _QueuedCommand(
-        command=MagicMock(), response_type=_ResponseType.DEVICE_DATA, future=future
-    )
-    thermostat._command_queue.append(queued_command)
-
-    with patch.object(
-        thermostat, "_trigger_event", new_callable=AsyncMock
-    ) as mock_trigger_event:
-        await thermostat._on_device_data_received(device_data)
-
-        mock_trigger_event.assert_called_once_with(
-            Eq3Event.DEVICE_DATA_RECEIVED, device_data=device_data
-        )
-        assert future.done()
-        assert future.result() == device_data
-        assert len(thermostat._command_queue) == 0
-
-
-@pytest.mark.asyncio
 async def test_on_status_received(thermostat: Thermostat) -> None:
     status = MagicMock()
 
@@ -1277,31 +1179,6 @@ async def test_on_status_received(thermostat: Thermostat) -> None:
 
 
 @pytest.mark.asyncio
-async def test_on_status_received_with_future(thermostat: Thermostat) -> None:
-    status = MagicMock()
-    future: asyncio.Future[object] = asyncio.Future()
-    command = _QueuedCommand(
-        command=_InfoGetCommand(time=datetime.now()),
-        response_type=_ResponseType.STATUS,
-        future=future,
-        schedule_count=0,
-    )
-    thermostat._command_queue.append(command)
-
-    with patch.object(
-        thermostat, "_trigger_event", new_callable=AsyncMock
-    ) as mock_trigger_event:
-        await thermostat._on_status_received(status)
-
-        mock_trigger_event.assert_called_once_with(
-            Eq3Event.STATUS_RECEIVED, status=status
-        )
-        assert future.done()
-        assert future.result() == status
-        assert len(thermostat._command_queue) == 0
-
-
-@pytest.mark.asyncio
 async def test_on_schedule_received(thermostat: Thermostat) -> None:
     schedule = MagicMock()
 
@@ -1313,68 +1190,6 @@ async def test_on_schedule_received(thermostat: Thermostat) -> None:
         mock_trigger_event.assert_called_once_with(
             Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
         )
-
-
-@pytest.mark.asyncio
-async def test_on_schedule_received_with_future(thermostat: Thermostat) -> None:
-    schedule = MagicMock()
-    future: asyncio.Future[object] = asyncio.Future()
-    command = _QueuedCommand(
-        command=_IdGetCommand(),
-        response_type=_ResponseType.SCHEDULE,
-        future=future,
-        schedule_count=1,
-    )
-    thermostat._command_queue.append(command)
-
-    with patch.object(
-        thermostat, "_trigger_event", new_callable=AsyncMock
-    ) as mock_trigger_event:
-        await thermostat._on_schedule_received(schedule)
-
-        mock_trigger_event.assert_called_once_with(
-            Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
-        )
-        assert future.done()
-        assert future.result() == schedule
-        assert len(thermostat._command_queue) == 0
-
-
-@pytest.mark.asyncio
-async def test_on_schedule_received_with_future_multiple(
-    thermostat: Thermostat,
-) -> None:
-    schedule = MagicMock()
-    future: asyncio.Future[object] = asyncio.Future()
-    command = _QueuedCommand(
-        command=_IdGetCommand(),
-        response_type=_ResponseType.SCHEDULE,
-        future=future,
-        schedule_count=2,
-    )
-    thermostat._command_queue.append(command)
-
-    with patch.object(
-        thermostat, "_trigger_event", new_callable=AsyncMock
-    ) as mock_trigger_event:
-        await thermostat._on_schedule_received(schedule)
-
-        mock_trigger_event.assert_called_once_with(
-            Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
-        )
-        assert not future.done()
-        assert len(thermostat._command_queue) == 1
-        assert thermostat._command_queue[0].schedule_count == 1
-
-        mock_trigger_event.reset_mock()
-
-        await thermostat._on_schedule_received(schedule)
-
-        mock_trigger_event.assert_called_once_with(
-            Eq3Event.SCHEDULE_RECEIVED, schedule=schedule
-        )
-        assert future.done()
-        assert len(thermostat._command_queue) == 0
 
 
 @pytest.mark.asyncio
@@ -1547,150 +1362,3 @@ async def tests_trigger_event_connected_async(thermostat: Thermostat) -> None:
     )
 
     callback.assert_called_once_with(device_data, status, schedule)
-
-
-@pytest.mark.asyncio
-async def test_device_data_response_with_done_future(thermostat: Thermostat) -> None:
-    device_data = MagicMock()
-    future: asyncio.Future[object] = asyncio.Future()
-    future.set_result("already done")
-
-    command = _QueuedCommand(
-        command=_IdGetCommand(),
-        response_type=_ResponseType.DEVICE_DATA,
-        future=future,
-        schedule_count=0,
-    )
-    thermostat._command_queue.append(command)
-
-    with patch.object(
-        thermostat, "_trigger_event", new_callable=AsyncMock
-    ) as mock_trigger_event:
-        await thermostat._on_device_data_received(device_data)
-        mock_trigger_event.assert_called_once()
-        assert len(thermostat._command_queue) == 1
-
-
-@pytest.mark.asyncio
-async def test_status_response_with_done_future(thermostat: Thermostat) -> None:
-    status = MagicMock()
-    future: asyncio.Future[object] = asyncio.Future()
-    future.set_result("already done")
-
-    command = _QueuedCommand(
-        command=_InfoGetCommand(time=datetime.now()),
-        response_type=_ResponseType.STATUS,
-        future=future,
-        schedule_count=0,
-    )
-    thermostat._command_queue.append(command)
-
-    with patch.object(
-        thermostat, "_trigger_event", new_callable=AsyncMock
-    ) as mock_trigger_event:
-        await thermostat._on_status_received(status)
-        mock_trigger_event.assert_called_once()
-        assert len(thermostat._command_queue) == 1
-
-
-@pytest.mark.asyncio
-async def test_schedule_response_with_done_future(thermostat: Thermostat) -> None:
-    schedule = MagicMock()
-    future: asyncio.Future[object] = asyncio.Future()
-    future.set_result("already done")
-
-    command = _QueuedCommand(
-        command=_IdGetCommand(),
-        response_type=_ResponseType.SCHEDULE,
-        future=future,
-        schedule_count=1,
-    )
-    thermostat._command_queue.append(command)
-
-    with patch.object(
-        thermostat, "_trigger_event", new_callable=AsyncMock
-    ) as mock_trigger_event:
-        await thermostat._on_schedule_received(schedule)
-        mock_trigger_event.assert_called_once()
-        assert len(thermostat._command_queue) == 1
-
-
-@pytest.mark.asyncio
-async def test_disconnect_with_done_future(thermostat: Thermostat) -> None:
-    from collections import deque
-
-    from eq3btsmart.thermostat import _QueuedCommand, _ResponseType
-
-    with patch.object(thermostat, "_conn") as mock_conn:
-        mock_conn.is_connected = True
-        mock_conn.disconnect = AsyncMock()
-
-        done_future: asyncio.Future[object] = asyncio.Future()
-        done_future.set_result("test_result")
-
-        mock_command = MagicMock()
-        queued_command = _QueuedCommand(
-            command=mock_command, response_type=_ResponseType.STATUS, future=done_future
-        )
-        thermostat._command_queue.append(queued_command)
-
-        await thermostat.async_disconnect()
-
-
-@pytest.mark.asyncio
-async def test_timeout_cleanup_command_not_in_queue_race_conditions(
-    thermostat: Thermostat,
-) -> None:
-    with patch.object(thermostat, "_conn") as mock_conn:
-        mock_conn.is_connected = True
-        with (
-            patch.object(
-                thermostat, "_async_write_command", new_callable=AsyncMock
-            ) as mock_write,
-            patch("asyncio.wait_for", side_effect=TimeoutError()),
-        ):
-
-            def clear_queue_side_effect(*_args: object, **_kwargs: object) -> None:
-                thermostat._command_queue.clear()
-
-            mock_write.side_effect = clear_queue_side_effect
-
-            mock_command = MagicMock()
-            with pytest.raises(
-                Eq3TimeoutException, match="Timeout during device data command"
-            ):
-                await thermostat._async_write_command_with_device_data_response(
-                    mock_command
-                )
-
-        with (
-            patch.object(
-                thermostat, "_async_write_command", new_callable=AsyncMock
-            ) as mock_write,
-            patch("asyncio.wait_for", side_effect=TimeoutError()),
-        ):
-            mock_write.side_effect = clear_queue_side_effect
-
-            mock_command = MagicMock()
-            with pytest.raises(
-                Eq3TimeoutException, match="Timeout during status command"
-            ):
-                await thermostat._async_write_command_with_status_response(mock_command)
-
-        with (
-            patch.object(
-                thermostat, "_async_write_command", new_callable=AsyncMock
-            ) as mock_write,
-            patch("asyncio.wait_for", side_effect=TimeoutError()),
-        ):
-            mock_write.side_effect = clear_queue_side_effect
-
-            from eq3btsmart._structures import _Eq3Struct
-
-            mock_commands: list[_Eq3Struct] = [MagicMock(spec=_Eq3Struct)]
-            with pytest.raises(
-                Eq3TimeoutException, match="Timeout during schedule command"
-            ):
-                await thermostat._async_write_commands_with_schedule_response(
-                    mock_commands
-                )
