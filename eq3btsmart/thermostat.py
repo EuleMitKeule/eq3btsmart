@@ -86,7 +86,7 @@ class Thermostat:
             Eq3Event, list[Union[Callable[..., None], Callable[..., Awaitable[None]]]]
         ] = defaultdict(list)
         self._lock = asyncio.Lock()
-        self._future: asyncio.Future | None = None
+        self._future: asyncio.Future[DeviceData | Status | Schedule] | None = None
         self._connection_timeout = connection_timeout
         self._command_timeout = command_timeout
 
