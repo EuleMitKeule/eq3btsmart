@@ -1088,10 +1088,10 @@ class Thermostat:
             case Eq3Event.DISCONNECTED:
                 args = ()
             case Eq3Event.CONNECTED:
-                if device_data is None or status is None or schedule is None:
-                    raise Eq3InternalException(
-                        "device_data, status, and schedule must not be None for CONNECTED event"
-                    )
+                # if device_data is None or status is None or schedule is None:
+                #     raise Eq3InternalException(
+                #         "device_data, status, and schedule must not be None for CONNECTED event"
+                #     )
                 args = (device_data, status, schedule)
             case Eq3Event.DEVICE_DATA_RECEIVED:
                 if device_data is None:
