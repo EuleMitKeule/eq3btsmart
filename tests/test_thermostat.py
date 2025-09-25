@@ -955,7 +955,7 @@ async def test_write_command(thermostat: Thermostat) -> None:
         mock_is_connected.return_value = True
 
         # Simulate a response after the command is written
-        async def simulate_response():
+        async def simulate_response() -> None:
             # Give the command time to set up the future
             await asyncio.sleep(0.01)
             # Simulate receiving device data response
