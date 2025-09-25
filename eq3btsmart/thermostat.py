@@ -150,8 +150,8 @@ class Thermostat:
         Raises:
             Eq3StateException: If the schedule is None. This occurs when the thermostat has not been connected
         """
-        if self._last_schedule is None:
-            raise Eq3StateException("Schedule not set")
+        # if self._last_schedule is None:
+        #     raise Eq3StateException("Schedule not set")
         return self._last_schedule
 
     async def async_connect(self) -> None:
