@@ -154,7 +154,7 @@ class Thermostat:
         #     raise Eq3StateException("Schedule not set")
         return self._last_schedule
 
-    async def async_connect(self, bugged_state_fix_value: bool | None = None) -> None:
+    async def async_connect(self, bugged_state_fix_value: float | None = None) -> None:
         """Connect to the thermostat.
 
         After connecting, the device data, status, and schedule will be queried and stored.
@@ -189,10 +189,9 @@ class Thermostat:
             )
             if bugged_state_fix_value is not None:
                 await self._async_write_command(
-                    _LockSetCommand(enable=not bugged_state_fix_value), False, False
-                )
-                await self._async_write_command(
-                    _LockSetCommand(enable=bugged_state_fix_value), False, False
+                    _TemperatureSetCommand(temperature=bugged_state_fix_value),
+                    False,
+                    False,
                 )
             await self._async_write_command(
                 _InfoGetCommand(time=datetime.now()),
