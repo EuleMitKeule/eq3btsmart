@@ -201,7 +201,10 @@ class Thermostat:
                 False,
                 False,
             )
-            await self._async_write_command(_ScheduleGetCommand(), False, False)
+            for day in Eq3WeekDay:
+                await self._async_write_command(
+                    _ScheduleGetCommand(day=day), False, False
+                )
         except BleakError as ex:
             raise Eq3ConnectionException("Could not connect to the device") from ex
         except TimeoutError as ex:
