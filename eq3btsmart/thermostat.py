@@ -1,10 +1,8 @@
 """Support for eQ-3 Bluetooth Smart thermostats."""
 
 import asyncio
-from collections import defaultdict, deque
-from dataclasses import dataclass
+from collections import defaultdict
 from datetime import datetime, timedelta
-from enum import Enum, auto
 from types import TracebackType
 from typing import Awaitable, Callable, Literal, Self, Union, cast, overload
 
@@ -60,24 +58,6 @@ from eq3btsmart.models import DeviceData, Presets, Schedule, Status
 __all__ = ["Thermostat"]
 
 
-class _ResponseType(Enum):
-    """Expected response types for queued commands."""
-
-    DEVICE_DATA = auto()
-    STATUS = auto()
-    SCHEDULE = auto()
-
-
-@dataclass
-class _QueuedCommand:
-    """Represents a command waiting for a response."""
-
-    command: _Eq3Struct
-    response_type: _ResponseType
-    future: asyncio.Future[object]
-    schedule_count: int = 0
-
-
 class Thermostat:
     """Representation of an eQ-3 Bluetooth Smart thermostat."""
 
@@ -105,8 +85,8 @@ class Thermostat:
         self._callbacks: defaultdict[
             Eq3Event, list[Union[Callable[..., None], Callable[..., Awaitable[None]]]]
         ] = defaultdict(list)
-        self._command_queue: deque[_QueuedCommand] = deque()
         self._lock = asyncio.Lock()
+        self._future: asyncio.Future[DeviceData | Status | Schedule] | None = None
         self._connection_timeout = connection_timeout
         self._command_timeout = command_timeout
 
@@ -177,7 +157,7 @@ class Thermostat:
             raise Eq3StateException("Schedule not set")
         return self._last_schedule
 
-    async def async_connect(self) -> None:
+    async def async_connect(self, bugged_state_fix_value: float | None = None) -> None:
         """Connect to the thermostat.
 
         After connecting, the device data, status, and schedule will be queried and stored.
@@ -201,18 +181,33 @@ class Thermostat:
                 max_attempts=3,
                 timeout=self._connection_timeout,
             )
+            if not self._conn:
+                raise Eq3ConnectionException("Could not connect to the device")
+
             await self._conn.start_notify(
                 _Eq3Characteristic.NOTIFY, self._on_message_received
             )
-            (
-                self._last_device_data,
-                self._last_status,
-                self._last_schedule,
-            ) = await asyncio.gather(
-                self.async_get_device_data(),
-                self.async_get_status(),
-                self.async_get_schedule(),
+
+            await self._async_write_command(
+                _IdGetCommand(),
+                False,
+                False,
             )
+            if bugged_state_fix_value is not None:
+                await self._async_write_command(
+                    _TemperatureSetCommand(temperature=bugged_state_fix_value),
+                    False,
+                    False,
+                )
+            await self._async_write_command(
+                _InfoGetCommand(time=datetime.now()),
+                False,
+                False,
+            )
+            for day in Eq3WeekDay:
+                await self._async_write_command(
+                    _ScheduleGetCommand(day=day), False, False
+                )
         except BleakError as ex:
             raise Eq3ConnectionException("Could not connect to the device") from ex
         except TimeoutError as ex:
@@ -239,12 +234,10 @@ class Thermostat:
         if not self.is_connected or self._conn is None:
             raise Eq3StateException("Not connected")
 
-        exception = Eq3ConnectionException("Connection closed")
-
-        while self._command_queue:
-            queued_command = self._command_queue.popleft()
-            if not queued_command.future.done():
-                queued_command.future.set_exception(exception)
+        if self._future and not self._future.done():
+            self._future.set_exception(
+                Eq3ConnectionException("Connection closed during command execution")
+            )
 
         try:
             await self._conn.disconnect()
@@ -264,9 +257,7 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
         """
-        return await self._async_write_command_with_device_data_response(
-            _IdGetCommand()
-        )
+        return cast(DeviceData, await self._async_write_command(_IdGetCommand()))
 
     async def async_get_status(self) -> Status:
         """Query the latest status.
@@ -279,8 +270,9 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
         """
-        return await self._async_write_command_with_status_response(
-            _InfoGetCommand(time=datetime.now())
+        return cast(
+            Status,
+            await self._async_write_command(_InfoGetCommand(time=datetime.now())),
         )
 
     async def async_get_schedule(self) -> Schedule:
@@ -294,8 +286,11 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
             Eq3TimeoutException: If the command times out.
         """
-        return await self._async_write_commands_with_schedule_response(
-            [_ScheduleGetCommand(day=week_day) for week_day in Eq3WeekDay]
+        return cast(
+            Schedule,
+            await self._async_write_commands(
+                [_ScheduleGetCommand(day=week_day) for week_day in Eq3WeekDay]
+            ),
         )
 
     async def async_set_temperature(self, temperature: float) -> Status:
@@ -323,8 +318,11 @@ class Thermostat:
         if temperature == EQ3_ON_TEMP:
             return await self.async_set_mode(Eq3OperationMode.ON)
 
-        return await self._async_write_command_with_status_response(
-            _TemperatureSetCommand(temperature=temperature)
+        return cast(
+            Status,
+            await self._async_write_command(
+                _TemperatureSetCommand(temperature=temperature)
+            ),
         )
 
     async def async_set_mode(self, operation_mode: Eq3OperationMode) -> Status:
@@ -343,11 +341,21 @@ class Thermostat:
             Eq3InvalidDataException: If the operation mode is not supported.
         """
         command: _ModeSetCommand
-
         match operation_mode:
             case Eq3OperationMode.AUTO:
                 command = _ModeSetCommand(mode=Eq3OperationMode.AUTO)
             case Eq3OperationMode.MANUAL:
+                if self.status.operation_mode != Eq3OperationMode.MANUAL:
+                    # Workaround for a bug in the thermostat firmware where switching directly to MANUAL mode fails.
+                    # The workaround sets the temperature to half a degree below or above the current target temperature
+                    # before setting the mode to MANUAL with the current target temperature.
+                    if self.status.target_temperature > EQ3_OFF_TEMP:
+                        temperature = self.status.target_temperature - 0.5
+                    else:
+                        temperature = self.status.target_temperature + 0.5
+                    await self._async_write_command(
+                        _TemperatureSetCommand(temperature=temperature)
+                    )
                 command = _ModeSetCommand(
                     mode=Eq3OperationMode.MANUAL
                     | _Eq3Temperature.encode(self.status.target_temperature)
@@ -365,7 +373,7 @@ class Thermostat:
                     f"Unsupported operation mode: {operation_mode}"
                 )
 
-        return await self._async_write_command_with_status_response(command)
+        return cast(Status, await self._async_write_command(command))
 
     async def async_set_preset(self, preset: Eq3Preset) -> Status:
         """Activate a preset.
@@ -381,14 +389,14 @@ class Thermostat:
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
-        command: _Eq3Struct
+        command: _ComfortSetCommand | _EcoSetCommand
         match preset:
             case Eq3Preset.COMFORT:
                 command = _ComfortSetCommand()
             case _:
                 command = _EcoSetCommand()
 
-        return await self._async_write_command_with_status_response(command)
+        return cast(Status, await self._async_write_command(command))
 
     async def async_set_boost(self, enable: bool) -> Status:
         """Enable or disable the boost mode.
@@ -406,8 +414,8 @@ class Thermostat:
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
-        return await self._async_write_command_with_status_response(
-            _BoostSetCommand(enable=enable)
+        return cast(
+            Status, await self._async_write_command(_BoostSetCommand(enable=enable))
         )
 
     async def async_set_locked(self, enable: bool) -> Status:
@@ -426,8 +434,8 @@ class Thermostat:
             Eq3CommandException: If an error occurs during the command.
             Eq3TimeoutException: If the command times out.
         """
-        return await self._async_write_command_with_status_response(
-            _LockSetCommand(enable=enable)
+        return cast(
+            Status, await self._async_write_command(_LockSetCommand(enable=enable))
         )
 
     async def async_set_away(
@@ -454,11 +462,14 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature or date is invalid.
         """
-        return await self._async_write_command_with_status_response(
-            _AwaySetCommand(
-                mode=Eq3OperationMode.AWAY | _Eq3Temperature.encode(temperature),
-                away_until=away_until,
-            )
+        return cast(
+            Status,
+            await self._async_write_command(
+                _AwaySetCommand(
+                    mode=Eq3OperationMode.AWAY | _Eq3Temperature.encode(temperature),
+                    away_until=away_until,
+                )
+            ),
         )
 
     async def async_set_schedule(self, schedule: Schedule) -> Schedule:
@@ -479,20 +490,23 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If any of the schedule data is invalid.
         """
-        return await self._async_write_commands_with_schedule_response(
-            [
-                _ScheduleSetCommand(
-                    day=schedule_day.week_day,
-                    hours=[
-                        _ScheduleHourStruct(
-                            target_temp=schedule_hour.target_temperature,
-                            next_change_at=schedule_hour.next_change_at,
-                        )
-                        for schedule_hour in schedule_day.schedule_hours
-                    ],
-                )
-                for schedule_day in schedule.schedule_days
-            ]
+        return cast(
+            Schedule,
+            await self._async_write_commands(
+                [
+                    _ScheduleSetCommand(
+                        day=schedule_day.week_day,
+                        hours=[
+                            _ScheduleHourStruct(
+                                target_temp=schedule_hour.target_temperature,
+                                next_change_at=schedule_hour.next_change_at,
+                            )
+                            for schedule_hour in schedule_day.schedule_hours
+                        ],
+                    )
+                    for schedule_day in schedule.schedule_days
+                ]
+            ),
         )
 
     async def async_delete_schedule(
@@ -520,8 +534,11 @@ class Thermostat:
             else week_days or list(Eq3WeekDay)
         )
 
-        return await self._async_write_commands_with_schedule_response(
-            [_ScheduleSetCommand(day=week_day, hours=[]) for week_day in week_days]
+        return cast(
+            Schedule,
+            await self._async_write_commands(
+                [_ScheduleSetCommand(day=week_day, hours=[]) for week_day in week_days]
+            ),
         )
 
     async def async_configure_presets(
@@ -548,11 +565,14 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperatures are invalid.
         """
-        return await self._async_write_command_with_status_response(
-            _ComfortEcoConfigureCommand(
-                comfort_temperature=comfort_temperature,
-                eco_temperature=eco_temperature,
-            )
+        return cast(
+            Status,
+            await self._async_write_command(
+                _ComfortEcoConfigureCommand(
+                    comfort_temperature=comfort_temperature,
+                    eco_temperature=eco_temperature,
+                )
+            ),
         )
 
     async def async_configure_comfort_temperature(
@@ -628,8 +648,11 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3InvalidDataException: If the temperature is invalid.
         """
-        return await self._async_write_command_with_status_response(
-            _OffsetConfigureCommand(offset=temperature_offset)
+        return cast(
+            Status,
+            await self._async_write_command(
+                _OffsetConfigureCommand(offset=temperature_offset)
+            ),
         )
 
     async def async_configure_window_open(
@@ -658,11 +681,14 @@ class Thermostat:
         if isinstance(duration, float) or isinstance(duration, int):
             duration = timedelta(minutes=duration)
 
-        return await self._async_write_command_with_status_response(
-            _WindowOpenConfigureCommand(
-                window_open_temperature=temperature,
-                window_open_time=duration,
-            )
+        return cast(
+            Status,
+            await self._async_write_command(
+                _WindowOpenConfigureCommand(
+                    window_open_temperature=temperature,
+                    window_open_time=duration,
+                )
+            ),
         )
 
     async def async_configure_window_open_temperature(
@@ -748,85 +774,22 @@ class Thermostat:
         """
         await self.async_disconnect()
 
-    async def _async_write_command_with_device_data_response(
-        self, command: _Eq3Struct
-    ) -> DeviceData:
-        """Write a command to the thermostat and wait for a device data response.
-
-        Args:
-            command (_Eq3Struct): The command to write.
-
-        Returns:
-            DeviceData: The device data.
-
-        Raises:
-            Eq3StateException: If the thermostat is not connected.
-            Eq3TimeoutException: If the command times out.
-            Eq3CommandException: If an error occurs while sending the command.
-        """
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
-
-        queued_command = _QueuedCommand(
-            command=command, response_type=_ResponseType.DEVICE_DATA, future=future
-        )
-
-        self._command_queue.append(queued_command)
-        await self._async_write_command(command)
-
-        try:
-            device_data = await asyncio.wait_for(future, self._command_timeout)
-        except TimeoutError as ex:
-            if queued_command in self._command_queue:
-                self._command_queue.remove(queued_command)
-            raise Eq3TimeoutException("Timeout during device data command") from ex
-
-        return cast(DeviceData, device_data)
-
-    async def _async_write_command_with_status_response(
-        self, command: _Eq3Struct
-    ) -> Status:
-        """Write a command to the thermostat and wait for a status response.
-
-        Args:
-            command (_Eq3Struct): The command to write.
-
-        Returns:
-            Status: The status.
-
-        Raises:
-            Eq3StateException: If the thermostat is not connected.
-            Eq3TimeoutException: If the command times out.
-            Eq3CommandException: If an error occurs while sending the command.
-        """
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
-
-        queued_command = _QueuedCommand(
-            command=command, response_type=_ResponseType.STATUS, future=future
-        )
-
-        self._command_queue.append(queued_command)
-        await self._async_write_command(command)
-
-        try:
-            status = await asyncio.wait_for(future, self._command_timeout)
-        except TimeoutError as ex:
-            if queued_command in self._command_queue:
-                self._command_queue.remove(queued_command)
-            raise Eq3TimeoutException("Timeout during status command") from ex
-
-        return cast(Status, status)
-
-    async def _async_write_commands_with_schedule_response(
-        self, commands: list[_Eq3Struct]
-    ) -> Schedule:
-        """Write commands to the thermostat and wait for a schedule response.
+    async def _async_write_commands(
+        self,
+        commands: list[_Eq3Struct],
+        check_connection: bool = True,
+        acquire_lock: bool = True,
+    ) -> DeviceData | Status | Schedule:
+        """Set up the future for multiple commands.
 
         Args:
             commands (list[_Eq3Struct]): The commands to write.
+            check_connection (bool, optional): Whether to check the connection before sending the command. Defaults to True.
+            acquire_lock (bool, optional): Whether to acquire the lock before sending the command. Defaults to True.
 
         Returns:
+            DeviceData: The device data.
+            Status: The status.
             Schedule: The schedule.
 
         Raises:
@@ -834,47 +797,23 @@ class Thermostat:
             Eq3TimeoutException: If the command times out.
             Eq3CommandException: If an error occurs while sending the command.
         """
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
+        if acquire_lock:
+            await self._lock.acquire()
 
-        queued_command = _QueuedCommand(
-            command=commands[0],
-            response_type=_ResponseType.SCHEDULE,
-            future=future,
-            schedule_count=len(commands),
-        )
+        if check_connection and (not self.is_connected or self._conn is None):
+            await self.async_connect()
 
-        self._command_queue.append(queued_command)
-
-        for command in commands:
-            await self._async_write_command(command)
-
-        try:
-            schedule = await asyncio.wait_for(future, self._command_timeout)
-        except TimeoutError as ex:
-            if queued_command in self._command_queue:
-                self._command_queue.remove(queued_command)
-            raise Eq3TimeoutException("Timeout during schedule command") from ex
-
-        return cast(Schedule, schedule)
-
-    async def _async_write_command(self, command: _Eq3Struct) -> None:
-        """Write a command to the thermostat.
-
-        Args:
-            command (_Eq3Struct): The command to write.
-
-        Raises:
-            Eq3StateException: If the thermostat is not connected.
-            Eq3CommandException: If an error occurs while sending the command.
-            Eq3TimeoutException: If the command times out.
-        """
         if not self.is_connected or self._conn is None:
+            if self._lock.locked():
+                self._lock.release()
             raise Eq3StateException("Not connected")
 
-        data = command.to_bytes()
+        loop = asyncio.get_running_loop()
+        self._future = loop.create_future()
 
-        async with self._lock:
+        for command in commands:
+            data = command.to_bytes()
+
             try:
                 await asyncio.wait_for(
                     self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
@@ -884,6 +823,77 @@ class Thermostat:
                 raise Eq3CommandException("Error during write") from ex
             except TimeoutError as ex:
                 raise Eq3TimeoutException("Timeout during write") from ex
+
+        try:
+            await asyncio.wait_for(self._future, self._command_timeout)
+            response = self._future.result()
+            return response
+        except TimeoutError as ex:
+            raise Eq3TimeoutException("Timeout during command") from ex
+        finally:
+            self._future = None
+            if acquire_lock and self._lock.locked():
+                self._lock.release()
+
+    async def _async_write_command(
+        self,
+        command: _Eq3Struct,
+        check_connection: bool = True,
+        acquire_lock: bool = True,
+    ) -> DeviceData | Status | Schedule:
+        """Set up the future for a command.
+
+        Args:
+            command (_Eq3Struct): The command to write.
+            check_connection (bool, optional): Whether to check the connection before sending the command. Defaults to True.
+            acquire_lock (bool, optional): Whether to acquire the lock before sending the command. Defaults to True.
+
+        Returns:
+            DeviceData: The device data.
+            Status: The status.
+            Schedule: The schedule.
+
+        Raises:
+            Eq3StateException: If the thermostat is not connected.
+            Eq3TimeoutException: If the command times out.
+            Eq3CommandException: If an error occurs while sending the command.
+        """
+        if acquire_lock:
+            await self._lock.acquire()
+
+        if check_connection and (not self.is_connected or self._conn is None):
+            await self.async_connect()
+
+        if not self.is_connected or self._conn is None:
+            if self._lock.locked():
+                self._lock.release()
+            raise Eq3StateException("Not connected")
+
+        loop = asyncio.get_running_loop()
+        self._future = loop.create_future()
+
+        data = command.to_bytes()
+
+        try:
+            await asyncio.wait_for(
+                self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
+                self._command_timeout,
+            )
+        except BleakError as ex:
+            raise Eq3CommandException("Error during write") from ex
+        except TimeoutError as ex:
+            raise Eq3TimeoutException("Timeout during write") from ex
+
+        try:
+            await asyncio.wait_for(self._future, self._command_timeout)
+            response = self._future.result()
+            return response
+        except TimeoutError as ex:
+            raise Eq3TimeoutException("Timeout during command") from ex
+        finally:
+            self._future = None
+            if acquire_lock and self._lock.locked():
+                self._lock.release()
 
     def _on_disconnected(self, _: BleakClient) -> None:
         """Handle disconnection from the thermostat."""
@@ -922,14 +932,8 @@ class Thermostat:
         """
         self._last_device_data = device_data
 
-        for i, queued_command in enumerate(self._command_queue):
-            if (
-                queued_command.response_type == _ResponseType.DEVICE_DATA
-                and not queued_command.future.done()
-            ):
-                self._command_queue.remove(queued_command)
-                queued_command.future.set_result(device_data)
-                break
+        if self._future:
+            self._future.set_result(device_data)
 
         await self._trigger_event(
             Eq3Event.DEVICE_DATA_RECEIVED, device_data=device_data
@@ -945,14 +949,8 @@ class Thermostat:
         """
         self._last_status = status
 
-        for i, queued_command in enumerate(self._command_queue):
-            if (
-                queued_command.response_type == _ResponseType.STATUS
-                and not queued_command.future.done()
-            ):
-                self._command_queue.remove(queued_command)
-                queued_command.future.set_result(status)
-                break
+        if self._future:
+            self._future.set_result(status)
 
         await self._trigger_event(Eq3Event.STATUS_RECEIVED, status=status)
 
@@ -969,17 +967,8 @@ class Thermostat:
 
         self._last_schedule.merge(schedule)
 
-        for i, queued_command in enumerate(self._command_queue):
-            if (
-                queued_command.response_type == _ResponseType.SCHEDULE
-                and not queued_command.future.done()
-            ):
-                queued_command.schedule_count -= 1
-
-                if queued_command.schedule_count == 0:
-                    self._command_queue.remove(queued_command)
-                    queued_command.future.set_result(self._last_schedule)
-                break
+        if self._future:
+            self._future.set_result(self._last_schedule)
 
         await self._trigger_event(
             Eq3Event.SCHEDULE_RECEIVED, schedule=self._last_schedule
