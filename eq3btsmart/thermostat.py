@@ -182,9 +182,15 @@ class Thermostat:
                 _Eq3Characteristic.NOTIFY, self._on_message_received
             )
 
-            await self._async_write_command(_IdGetCommand(), False)
             await self._async_write_command(
-                _InfoGetCommand(time=datetime.now()), False, False
+                _IdGetCommand(),
+                False,
+                False,
+            )
+            await self._async_write_command(
+                _InfoGetCommand(time=datetime.now()),
+                False,
+                False,
             )
             # await self._async_write_command(_ScheduleGetCommand(), False, False)
         except BleakError as ex:
