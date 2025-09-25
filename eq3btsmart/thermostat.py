@@ -24,6 +24,7 @@ from eq3btsmart._structures import (
     _Eq3Struct,
     _IdGetCommand,
     _InfoGetCommand,
+    _InfoGetTestCommand,
     _LockSetCommand,
     _ModeSetCommand,
     _OffsetConfigureCommand,
@@ -187,6 +188,7 @@ class Thermostat:
                 False,
                 False,
             )
+            await self._async_write_command(_InfoGetTestCommand(), False, False)
             await self._async_write_command(
                 _InfoGetCommand(time=datetime.now()),
                 False,

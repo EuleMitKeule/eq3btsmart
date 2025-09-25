@@ -119,6 +119,13 @@ class _IdGetCommand(_Eq3Struct):
 
 
 @dataclass
+class _InfoGetTestCommand(_Eq3Struct):
+    """Test."""
+
+    cmd: int = csfield(Const(_Eq3Command.INFO_GET, Int8ub))
+
+
+@dataclass
 class _InfoGetCommand(_Eq3Struct):
     """Structure for info get command."""
 
