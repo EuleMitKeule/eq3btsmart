@@ -181,17 +181,12 @@ class Thermostat:
             await self._conn.start_notify(
                 _Eq3Characteristic.NOTIFY, self._on_message_received
             )
-            (
-                self._last_device_data,
-                self._last_status,
-                # self._last_schedule,
-            ) = await asyncio.gather(
-                self._async_write_command(_IdGetCommand(), False, False),
-                self._async_write_command(
-                    _InfoGetCommand(time=datetime.now()), False, False
-                ),
-                # self._async_write_command(_ScheduleGetCommand()),
+
+            await self._async_write_command(_IdGetCommand(), False)
+            await self._async_write_command(
+                _InfoGetCommand(time=datetime.now()), False, False
             )
+            # await self._async_write_command(_ScheduleGetCommand(), False, False)
         except BleakError as ex:
             raise Eq3ConnectionException("Could not connect to the device") from ex
         except TimeoutError as ex:
