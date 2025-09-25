@@ -181,6 +181,9 @@ class Thermostat:
                 max_attempts=3,
                 timeout=self._connection_timeout,
             )
+            if not self._conn:
+                raise Eq3ConnectionException("Could not connect to the device")
+
             await self._conn.start_notify(
                 _Eq3Characteristic.NOTIFY, self._on_message_received
             )
