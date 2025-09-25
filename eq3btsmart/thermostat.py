@@ -24,7 +24,6 @@ from eq3btsmart._structures import (
     _Eq3Struct,
     _IdGetCommand,
     _InfoGetCommand,
-    _InfoGetTestCommand,
     _LockSetCommand,
     _ModeSetCommand,
     _OffsetConfigureCommand,
@@ -155,7 +154,7 @@ class Thermostat:
         #     raise Eq3StateException("Schedule not set")
         return self._last_schedule
 
-    async def async_connect(self) -> None:
+    async def async_connect(self, bugged_state_fix_value: bool | None = None) -> None:
         """Connect to the thermostat.
 
         After connecting, the device data, status, and schedule will be queried and stored.
@@ -188,7 +187,13 @@ class Thermostat:
                 False,
                 False,
             )
-            await self._async_write_command(_InfoGetTestCommand(), False, False)
+            if bugged_state_fix_value is not None:
+                await self._async_write_command(
+                    _LockSetCommand(enable=not bugged_state_fix_value), False, False
+                )
+                await self._async_write_command(
+                    _LockSetCommand(enable=bugged_state_fix_value), False, False
+                )
             await self._async_write_command(
                 _InfoGetCommand(time=datetime.now()),
                 False,
