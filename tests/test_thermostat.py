@@ -823,9 +823,9 @@ async def test_write_command_with_device_data_response_timeout(
         ) as mock_is_connected,
     ):
         mock_is_connected.return_value = True
-        thermostat._command_timeout = 0
+        thermostat._command_timeout = 1
 
-        with pytest.raises(Eq3TimeoutException, match="Timeout during write"):
+        with pytest.raises(Eq3TimeoutException, match="Timeout during command"):
             await thermostat._async_write_command(mock_command)
 
         mock_write_gatt_char.assert_called_once_with(
@@ -877,9 +877,9 @@ async def test_write_command_with_status_response_timeout(
         ) as mock_is_connected,
     ):
         mock_is_connected.return_value = True
-        thermostat._command_timeout = 0
+        thermostat._command_timeout = 1
 
-        with pytest.raises(Eq3TimeoutException, match="Timeout during write"):
+        with pytest.raises(Eq3TimeoutException, match="Timeout during command"):
             await thermostat._async_write_command(mock_command)
 
         mock_write_gatt_char.assert_called_once_with(
@@ -933,7 +933,7 @@ async def test_write_commands_with_schedule_response_timeout(
         mock_is_connected.return_value = True
         thermostat._command_timeout = 0
 
-        with pytest.raises(Eq3TimeoutException, match="Timeout during write"):
+        with pytest.raises(Eq3TimeoutException, match="Timeout during command"):
             await thermostat._async_write_commands(mock_commands)
 
         assert mock_write_gatt_char.call_count == 1
@@ -1006,7 +1006,7 @@ async def test_write_command_bleak_error(thermostat: Thermostat) -> None:
     ):
         mock_is_connected.return_value = True
 
-        with pytest.raises(Eq3CommandException, match="Error during write"):
+        with pytest.raises(Eq3CommandException, match="Error during command"):
             await thermostat._async_write_command(mock_command)
 
 
@@ -1023,7 +1023,7 @@ async def test_write_command_timeout_error(thermostat: Thermostat) -> None:
         thermostat._command_timeout = 0
         mock_is_connected.return_value = True
 
-        with pytest.raises(Eq3TimeoutException, match="Timeout during write"):
+        with pytest.raises(Eq3TimeoutException, match="Timeout during command"):
             await thermostat._async_write_command(mock_command)
 
 

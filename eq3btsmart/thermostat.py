@@ -811,23 +811,18 @@ class Thermostat:
         loop = asyncio.get_running_loop()
         self._future = loop.create_future()
 
-        for command in commands:
-            data = command.to_bytes()
-
-            try:
+        try:
+            for command in commands:
+                data = command.to_bytes()
                 await asyncio.wait_for(
                     self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
                     self._command_timeout,
                 )
-            except BleakError as ex:
-                raise Eq3CommandException("Error during write") from ex
-            except TimeoutError as ex:
-                raise Eq3TimeoutException("Timeout during write") from ex
-
-        try:
             await asyncio.wait_for(self._future, self._command_timeout)
             response = self._future.result()
             return response
+        except BleakError as ex:
+            raise Eq3CommandException("Error during command") from ex
         except TimeoutError as ex:
             raise Eq3TimeoutException("Timeout during command") from ex
         finally:
@@ -859,7 +854,10 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
         """
         if acquire_lock:
-            await self._lock.acquire()
+            try:
+                await asyncio.wait_for(self._lock.acquire(), self._command_timeout)
+            except TimeoutError as ex:
+                raise Eq3TimeoutException("Timeout during command") from ex
 
         if check_connection and (not self.is_connected or self._conn is None):
             await self.async_connect()
@@ -879,15 +877,11 @@ class Thermostat:
                 self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
                 self._command_timeout,
             )
-        except BleakError as ex:
-            raise Eq3CommandException("Error during write") from ex
-        except TimeoutError as ex:
-            raise Eq3TimeoutException("Timeout during write") from ex
-
-        try:
             await asyncio.wait_for(self._future, self._command_timeout)
             response = self._future.result()
             return response
+        except BleakError as ex:
+            raise Eq3CommandException("Error during command") from ex
         except TimeoutError as ex:
             raise Eq3TimeoutException("Timeout during command") from ex
         finally:
