@@ -87,6 +87,7 @@ class Thermostat:
         ] = defaultdict(list)
         self._lock = asyncio.Lock()
         self._future: asyncio.Future[DeviceData | Status | Schedule] | None = None
+        self._background_tasks: set[asyncio.Task] = set()
         self._connection_timeout = connection_timeout
         self._command_timeout = command_timeout
 
@@ -891,7 +892,9 @@ class Thermostat:
 
     def _on_disconnected(self, _: BleakClient) -> None:
         """Handle disconnection from the thermostat."""
-        asyncio.create_task(self._trigger_event(Eq3Event.DISCONNECTED))
+        task = asyncio.create_task(self._trigger_event(Eq3Event.DISCONNECTED))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _on_message_received(
         self, _: BleakGATTCharacteristic, data: bytearray
