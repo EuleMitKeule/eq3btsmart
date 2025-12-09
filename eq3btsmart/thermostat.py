@@ -799,35 +799,38 @@ class Thermostat:
             Eq3CommandException: If an error occurs while sending the command.
         """
         if acquire_lock:
-            await self._lock.acquire()
-
-        if check_connection and (not self.is_connected or self._conn is None):
-            await self.async_connect()
-
-        if not self.is_connected or self._conn is None:
-            if self._lock.locked():
-                self._lock.release()
-            raise Eq3StateException("Not connected")
-
-        loop = asyncio.get_running_loop()
-        self._future = loop.create_future()
+            try:
+                await asyncio.wait_for(self._lock.acquire(), self._command_timeout)
+            except TimeoutError as ex:
+                raise Eq3TimeoutException("Timeout during command") from ex
 
         try:
-            for command in commands:
-                data = command.to_bytes()
-                await asyncio.wait_for(
-                    self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
-                    self._command_timeout,
-                )
-            await asyncio.wait_for(self._future, self._command_timeout)
-            response = self._future.result()
-            return response
-        except BleakError as ex:
-            raise Eq3CommandException("Error during command") from ex
-        except TimeoutError as ex:
-            raise Eq3TimeoutException("Timeout during command") from ex
+            if check_connection and (not self.is_connected or self._conn is None):
+                await self.async_connect()
+
+            if not self.is_connected or self._conn is None:
+                raise Eq3StateException("Not connected")
+
+            loop = asyncio.get_running_loop()
+            self._future = loop.create_future()
+
+            try:
+                for command in commands:
+                    data = command.to_bytes()
+                    await asyncio.wait_for(
+                        self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
+                        self._command_timeout,
+                    )
+                await asyncio.wait_for(self._future, self._command_timeout)
+                response = self._future.result()
+                return response
+            except BleakError as ex:
+                raise Eq3CommandException("Error during command") from ex
+            except TimeoutError as ex:
+                raise Eq3TimeoutException("Timeout during command") from ex
+            finally:
+                self._future = None
         finally:
-            self._future = None
             if acquire_lock and self._lock.locked():
                 self._lock.release()
 
@@ -860,33 +863,33 @@ class Thermostat:
             except TimeoutError as ex:
                 raise Eq3TimeoutException("Timeout during command") from ex
 
-        if check_connection and (not self.is_connected or self._conn is None):
-            await self.async_connect()
-
-        if not self.is_connected or self._conn is None:
-            if self._lock.locked():
-                self._lock.release()
-            raise Eq3StateException("Not connected")
-
-        loop = asyncio.get_running_loop()
-        self._future = loop.create_future()
-
-        data = command.to_bytes()
-
         try:
-            await asyncio.wait_for(
-                self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
-                self._command_timeout,
-            )
-            await asyncio.wait_for(self._future, self._command_timeout)
-            response = self._future.result()
-            return response
-        except BleakError as ex:
-            raise Eq3CommandException("Error during command") from ex
-        except TimeoutError as ex:
-            raise Eq3TimeoutException("Timeout during command") from ex
+            if check_connection and (not self.is_connected or self._conn is None):
+                await self.async_connect()
+
+            if not self.is_connected or self._conn is None:
+                raise Eq3StateException("Not connected")
+
+            loop = asyncio.get_running_loop()
+            self._future = loop.create_future()
+
+            data = command.to_bytes()
+
+            try:
+                await asyncio.wait_for(
+                    self._conn.write_gatt_char(_Eq3Characteristic.WRITE, data),
+                    self._command_timeout,
+                )
+                await asyncio.wait_for(self._future, self._command_timeout)
+                response = self._future.result()
+                return response
+            except BleakError as ex:
+                raise Eq3CommandException("Error during command") from ex
+            except TimeoutError as ex:
+                raise Eq3TimeoutException("Timeout during command") from ex
+            finally:
+                self._future = None
         finally:
-            self._future = None
             if acquire_lock and self._lock.locked():
                 self._lock.release()
 
