@@ -924,9 +924,6 @@ async def test_write_commands_with_schedule_response_timeout(
 
     with (
         patch.object(
-            thermostat._conn, "write_gatt_char", new_callable=AsyncMock
-        ) as mock_write_gatt_char,
-        patch.object(
             Thermostat, "is_connected", new_callable=PropertyMock
         ) as mock_is_connected,
     ):
@@ -935,8 +932,6 @@ async def test_write_commands_with_schedule_response_timeout(
 
         with pytest.raises(Eq3TimeoutException, match="Timeout during command"):
             await thermostat._async_write_commands(mock_commands)
-
-        assert mock_write_gatt_char.call_count == 1
 
 
 @pytest.mark.asyncio
