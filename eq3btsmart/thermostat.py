@@ -87,7 +87,7 @@ class Thermostat:
         ] = defaultdict(list)
         self._lock = asyncio.Lock()
         self._future: asyncio.Future[DeviceData | Status | Schedule] | None = None
-        self._background_tasks: set[asyncio.Task] = set()
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._connection_timeout = connection_timeout
         self._command_timeout = command_timeout
 
